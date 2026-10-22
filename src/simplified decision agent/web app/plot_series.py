@@ -18,9 +18,17 @@ COLORS = {
 }
 
 # Hours left of the marker for left-side numerals.
-# Aggregates sit further left than per-outcome discounted values (matplotlib: ~-2 vs decision-node labels).
+# Aggregates sit further left than per-outcome discounted values.
 LABEL_DISCOUNT_OFFSET = 8
-LABEL_AGG_OFFSET = 20
+LABEL_AGG_OFFSET = 12
+
+
+def _choice_title(prefix, action):
+    """Plotly HTML title with fully opaque bold choice callout."""
+    return {
+        "text": f"{prefix}  |  <b>Agent chooses {action}</b>",
+        "font": {"size": 15, "color": "#1a1d23"},
+    }
 
 STICKINESS_MIN, STICKINESS_MAX, N_STICKINESS_POINTS = 0.0, 1.0, 100
 
@@ -184,52 +192,70 @@ def _ss_point_traces(agent, ss_events):
     return traces, y_max
 
 
-def _aggregate_traces(action_values):
+def _aggregate_traces(action_values, chosen):
+    """Snack/resist aggregates at t=0; chosen action is fully opaque and bold."""
     snack_agg = action_values["snack"]
     resist_agg = action_values["resist"]
-    # Further left than discounted decision-node labels
     label_x = -LABEL_AGG_OFFSET
+
+    def agg_marker(name, y, fill, edge, is_chosen):
+        size = 16 if is_chosen else 11
+        # Chosen: solid full hue, thick border; other: lighter fill
+        return {
+            "type": "scatter",
+            "mode": "markers",
+            "x": [0],
+            "y": [y],
+            "marker": {
+                "size": size,
+                "color": edge if is_chosen else fill,
+                "opacity": 1.0,
+                "line": {"color": edge, "width": 2.5 if is_chosen else 1.0},
+            },
+            "name": f"{name} aggregate" + (" ★" if is_chosen else ""),
+            "hovertemplate": f"{name} agg=%{{y:.3f}}<extra></extra>",
+        }
+
+    def agg_label(y, fill, edge, is_chosen):
+        return _value_label(
+            label_x,
+            y,
+            f"{y:.2f}",
+            color=edge if is_chosen else fill,
+            position="middle left",
+        )
+
+    snack_chosen = chosen == "snack"
+    resist_chosen = chosen == "resist"
+    # Chosen label slightly bolder via larger font
+    snack_lab = agg_label(
+        snack_agg, COLORS["snack_agg"], COLORS["snack"], snack_chosen
+    )
+    resist_lab = agg_label(
+        resist_agg, COLORS["resist_agg"], COLORS["resist"], resist_chosen
+    )
+    if snack_chosen:
+        snack_lab["textfont"] = {
+            "color": COLORS["snack"],
+            "size": 14,
+            "family": "Arial Black, Helvetica Neue, sans-serif",
+        }
+    if resist_chosen:
+        resist_lab["textfont"] = {
+            "color": COLORS["resist"],
+            "size": 14,
+            "family": "Arial Black, Helvetica Neue, sans-serif",
+        }
+
     traces = [
-        {
-            "type": "scatter",
-            "mode": "markers",
-            "x": [0],
-            "y": [snack_agg],
-            "marker": {
-                "size": 12,
-                "color": COLORS["snack_agg"],
-                "line": {"color": COLORS["snack"], "width": 1.2},
-            },
-            "name": "snack aggregate",
-            "hovertemplate": "snack agg=%{y:.3f}<extra></extra>",
-        },
-        _value_label(
-            label_x,
-            snack_agg,
-            f"{snack_agg:.2f}",
-            color=COLORS["snack_agg"],
-            position="middle left",
+        agg_marker(
+            "snack", snack_agg, COLORS["snack_agg"], COLORS["snack"], snack_chosen
         ),
-        {
-            "type": "scatter",
-            "mode": "markers",
-            "x": [0],
-            "y": [resist_agg],
-            "marker": {
-                "size": 12,
-                "color": COLORS["resist_agg"],
-                "line": {"color": COLORS["resist"], "width": 1.2},
-            },
-            "name": "resist aggregate",
-            "hovertemplate": "resist agg=%{y:.3f}<extra></extra>",
-        },
-        _value_label(
-            label_x,
-            resist_agg,
-            f"{resist_agg:.2f}",
-            color=COLORS["resist_agg"],
-            position="middle left",
+        snack_lab,
+        agg_marker(
+            "resist", resist_agg, COLORS["resist_agg"], COLORS["resist"], resist_chosen
         ),
+        resist_lab,
     ]
     return traces, max(snack_agg, resist_agg)
 
@@ -271,7 +297,7 @@ def sails_frame(agent, environment, state, *, day=None):
     traces.extend(ss_traces)
     y_max = max(y_max, ss_ymax)
 
-    agg_traces, agg_ymax = _aggregate_traces(action_values)
+    agg_traces, agg_ymax = _aggregate_traces(action_values, action)
     traces.extend(agg_traces)
     y_max = max(y_max, agg_ymax)
 
@@ -284,14 +310,12 @@ def sails_frame(agent, environment, state, *, day=None):
     xticks, xticklabels = _day_xticks(x_max)
 
     if day is not None:
-        title = (
-            f"Day {day}  |  Choice sails with a horizon of {n} days  |  "
-            f"Agent would choose {action}"
+        title = _choice_title(
+            f"Day {day}  |  Choice sails with a horizon of {n} days", action
         )
     else:
-        title = (
-            f"Choice sails with a horizon of {n} days  |  "
-            f"Agent would choose {action}"
+        title = _choice_title(
+            f"Choice sails with a horizon of {n} days", action
         )
 
     return {
@@ -345,50 +369,103 @@ def aggregate_frame(agent, environment, state):
     ll_tip = ys[-1] if ys else 0
     y_max = max(max(ys) if ys else 0, ss_value)
 
+    resist_chosen = action == "resist"
+    snack_chosen = action == "snack"
+    resist_w = 3.5 if resist_chosen else 2.0
+    snack_size = 16 if snack_chosen else 10
+    resist_size = 14 if resist_chosen else 10
+
     traces = [
         {
             "type": "scatter",
             "mode": "lines",
             "x": xs,
             "y": ys,
-            "line": {"color": COLORS["resist"], "width": 2.5},
-            "name": "resist",
+            "line": {
+                "color": COLORS["resist"],
+                "width": resist_w,
+            },
+            "opacity": 1.0,
+            "name": "resist" + (" ★" if resist_chosen else ""),
             "hovertemplate": "t=%{x}h<br>V=%{y:.3f}<extra></extra>",
         },
         {
             "type": "scatter",
-            "mode": "markers+text",
+            "mode": "markers",
             "x": [0],
             "y": [perceived_ll],
-            "text": [f"{perceived_ll:.2f}"],
-            "textposition": "top left",
-            "marker": {"size": 10, "color": COLORS["resist"]},
+            "marker": {
+                "size": resist_size,
+                "color": COLORS["resist"],
+                "opacity": 1.0,
+                "line": {"color": COLORS["resist"], "width": 2 if resist_chosen else 0},
+            },
             "showlegend": False,
             "hoverinfo": "skip",
         },
+        _value_label(
+            0,
+            perceived_ll,
+            f"{perceived_ll:.2f}",
+            color=COLORS["resist"],
+            position="top left",
+        ),
         {
             "type": "scatter",
-            "mode": "markers+text",
+            "mode": "markers",
             "x": [ll_delay],
             "y": [ll_tip],
-            "text": [f"{ll_tip:.2f}"],
-            "textposition": "top right",
-            "marker": {"size": 10, "color": COLORS["resist"]},
+            "marker": {
+                "size": resist_size,
+                "color": COLORS["resist"],
+                "opacity": 1.0,
+            },
             "showlegend": False,
             "hoverinfo": "skip",
         },
+        _value_label(
+            ll_delay,
+            ll_tip,
+            f"{ll_tip:.2f}",
+            color=COLORS["resist"],
+            position="top right",
+        ),
         {
             "type": "scatter",
-            "mode": "markers+text",
+            "mode": "markers",
             "x": [0],
             "y": [ss_value],
-            "text": [f"{ss_value:.2f}"],
-            "textposition": "bottom left",
-            "marker": {"size": 10, "color": COLORS["snack"]},
-            "name": "snack",
+            "marker": {
+                "size": snack_size,
+                "color": COLORS["snack"],
+                "opacity": 1.0,
+                "line": {"color": COLORS["snack"], "width": 2.5 if snack_chosen else 0},
+            },
+            "name": "snack" + (" ★" if snack_chosen else ""),
             "hovertemplate": "snack=%{y:.3f}<extra></extra>",
         },
+        _value_label(
+            0,
+            ss_value,
+            f"{ss_value:.2f}",
+            color=COLORS["snack"],
+            position="bottom left",
+        ),
     ]
+    # Bold font on the chosen action's value numeral(s)
+    if resist_chosen:
+        traces[2]["textfont"] = {
+            "color": COLORS["resist"],
+            "size": 14,
+            "family": "Arial Black, Helvetica Neue, sans-serif",
+        }
+    if snack_chosen:
+        traces[-1]["textfont"] = {
+            "color": COLORS["snack"],
+            "size": 14,
+            "family": "Arial Black, Helvetica Neue, sans-serif",
+        }
+
     shapes = [
         {
             "type": "line",
@@ -407,7 +484,7 @@ def aggregate_frame(agent, environment, state):
         "kind": "aggregate_sail",
         "traces": traces,
         "layout": {
-            "title": f"Bundled value on day 1 |  Agent would choose {action}",
+            "title": _choice_title("Bundled value on day 1", action),
             "xaxis": {
                 "title": "Hours from now",
                 "range": [-pad, ll_delay + max(1, ll_delay * 0.15)],
@@ -428,16 +505,31 @@ def aggregate_frame(agent, environment, state):
     }
 
 
-def hyperbolic_frame(reward, delay, discount_factor):
+def hyperbolic_frame(reward, initial_delay, discount_factor, *, elapsed=0):
     """
-    Static full sail at remaining_delay = delay (hyperbolic_curve.py maths,
-    using global LL reward/delay and agent discount_factor).
+    Reward approaching an agent fixed at t=0 (hyperbolic_curve.py motion).
+
+    ``elapsed`` is how far time has advanced toward delivery (0 … initial_delay).
+    Perceived values use HypAgent maths: V = reward / (1 + k * distance).
+
+    Axis ranges stay locked to the initial delay and reward so the plot does
+    not rescale as the sail shortens.
     """
-    delay = int(delay)
-    xs = list(range(delay + 1))
-    ys = [reward / (1 + discount_factor * (delay - t)) for t in xs]
-    perceived = reward / (1 + discount_factor * delay) if delay >= 0 else reward
-    y_max = reward + 1
+    initial_delay = int(initial_delay)
+    elapsed = max(0, min(int(elapsed), initial_delay))
+    remaining = initial_delay - elapsed
+    k = float(discount_factor)
+
+    def V(distance):
+        return reward / (1.0 + k * distance)
+
+    xs = list(range(remaining + 1))
+    ys = [V(remaining - t) for t in xs]
+    perceived = V(remaining)
+
+    # Fixed scales for the whole approach (match hyperbolic_curve.py)
+    x_hi = max(initial_delay, 1)
+    y_hi = float(reward) + 1.0
 
     traces = [
         {
@@ -456,16 +548,17 @@ def hyperbolic_frame(reward, delay, discount_factor):
             "y": [perceived],
             "text": [f"{perceived:.2f}"],
             "textposition": "top center",
-            "marker": {"size": 11, "color": "black"},
-            "name": "perceived at t=0",
+            "textfont": {"color": "#1a1d23", "size": 13},
+            "marker": {"size": 12, "color": "black", "opacity": 1.0},
+            "name": "perceived at day 0",
             "hovertemplate": "perceived=%{y:.3f}<extra></extra>",
         },
     ]
     shapes = [
         {
             "type": "line",
-            "x0": delay,
-            "x1": delay,
+            "x0": remaining,
+            "x1": remaining,
             "y0": 0,
             "y1": 1,
             "yref": "paper",
@@ -477,25 +570,41 @@ def hyperbolic_frame(reward, delay, discount_factor):
         "kind": "hyperbolic_curve",
         "traces": traces,
         "layout": {
-            "title": f"Hyperbolic sail | reward={reward}, delay={delay}h, k={discount_factor}",
+            "title": {
+                "text": (
+                    f"Reward approaching day 0  |  elapsed = {elapsed}h  |  "
+                    f"remaining = {remaining}h  |  "
+                    f"<b>V(0) = {perceived:.2f}</b>"
+                ),
+                "font": {"size": 15, "color": "#1a1d23"},
+            },
             "xaxis": {
-                "title": "Time steps from now",
-                "range": [-0.2, max(delay, 1)],
+                "title": "Time steps from now (agent at 0)",
+                "range": [-0.2, x_hi],
+                "autorange": False,
+                "fixedrange": True,
             },
             "yaxis": {
                 "title": "Perceived value",
-                "range": [0, y_max],
+                "range": [0, y_hi],
+                "autorange": False,
+                "fixedrange": True,
             },
             "shapes": shapes,
             "legend": {"orientation": "h", "y": -0.15},
             "margin": {"l": 60, "r": 20, "t": 50, "b": 70},
             "height": 520,
+            # Keep zoom/axis identity stable across steps for this param set
+            "uirevision": f"hyp|{reward}|{initial_delay}|{k}",
         },
         "meta": {
             "reward": reward,
-            "delay": delay,
-            "discount_factor": discount_factor,
+            "initial_delay": initial_delay,
+            "elapsed": elapsed,
+            "remaining": remaining,
+            "discount_factor": k,
             "perceived": perceived,
+            "finished": elapsed >= initial_delay,
         },
     }
 

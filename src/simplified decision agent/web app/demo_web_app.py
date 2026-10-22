@@ -3,8 +3,8 @@ Unified interactive web app for the visual demos.
 
 Shared top-level params (rewards, delays, env length, horizon, vision).
 Three sections:
-  - Steppable: visualizing_main (Reset / Step through the environment)
-  - Non-steppable: visualise_sails | aggregate_sail | hyperbolic_curve
+  - Steppable: visualizing_main (env days) | hyperbolic_curve (reward approaching day 0)
+  - Non-steppable: visualise_sails | aggregate_sail
   - Sticky: max SS resisted vs stickiness (sticky_graph)
 
 Math lives in Python (core agent/env + plot_series); the browser draws with Plotly.
@@ -62,6 +62,12 @@ _session = {
     "agent": None,
     "state": None,
     "day": 0,
+    "finished": False,
+}
+
+# Hyperbolic approach: agent fixed at day 0; elapsed hours toward LL delivery
+_hyp_session = {
+    "elapsed": 0,
     "finished": False,
 }
 
@@ -127,7 +133,7 @@ def validate_config(cfg):
 
 
 def rebuild_session(cfg=None):
-    """Rebuild agent/env from config and reset steppable state to day 1."""
+    """Rebuild agent/env from config and reset both steppable demos."""
     if cfg is not None:
         _config.update(cfg)
     environment = TimelineEnvironment(**_build_env_params(_config))
@@ -142,7 +148,14 @@ def rebuild_session(cfg=None):
             "finished": False,
         }
     )
+    reset_hyp_session()
     return _session
+
+
+def reset_hyp_session():
+    """Restart hyperbolic approach at elapsed = 0 (full remaining delay)."""
+    _hyp_session.update({"elapsed": 0, "finished": False})
+    return _hyp_session
 
 
 def fresh_snapshot():
@@ -153,8 +166,8 @@ def fresh_snapshot():
     return environment, agent, state
 
 
-def current_steppable_frame():
-    """Sails frame for the current steppable session day."""
+def current_sails_frame():
+    """visualizing_main sails frame for the current env day."""
     frame = plot_series.sails_frame(
         _session["agent"],
         _session["environment"],
@@ -163,6 +176,27 @@ def current_steppable_frame():
     )
     frame["meta"]["finished"] = _session["finished"]
     return frame
+
+
+def current_hyp_frame():
+    """hyperbolic_curve frame: reward approaching day 0."""
+    frame = plot_series.hyperbolic_frame(
+        _config["ll_value"],
+        _config["ll_delay"],
+        _config["discount_factor"],
+        elapsed=_hyp_session["elapsed"],
+    )
+    frame["meta"]["finished"] = _hyp_session["finished"]
+    return frame
+
+
+def _steppable_demo():
+    """Active steppable demo from query or JSON body (default visualizing_main)."""
+    demo = request.args.get("demo")
+    if not demo and request.method in ("POST", "PUT", "PATCH"):
+        data = request.get_json(force=True, silent=True) or {}
+        demo = data.get("demo")
+    return demo or "visualizing_main"
 
 
 # Initialise once at import
@@ -216,22 +250,41 @@ def api_config():
 
 @app.route("/api/steppable/reset", methods=["POST"])
 def api_steppable_reset():
+    demo = _steppable_demo()
+    if demo == "hyperbolic_curve":
+        reset_hyp_session()
+        return jsonify(current_hyp_frame())
     rebuild_session()
-    return jsonify(current_steppable_frame())
+    return jsonify(current_sails_frame())
 
 
 @app.route("/api/steppable/step", methods=["POST"])
 def api_steppable_step():
     """
-    Match visualizing_main click: after the current day is shown, step the env
-    with today's choice and draw the next day (or mark finished).
+    visualizing_main: step the env one day (same as matplotlib click loop).
+    hyperbolic_curve: advance elapsed by 1h toward delivery (agent stays at day 0).
     """
+    demo = _steppable_demo()
+
+    if demo == "hyperbolic_curve":
+        if _hyp_session["finished"]:
+            return jsonify(current_hyp_frame())
+        delay = int(_config["ll_delay"])
+        # After showing remaining=0, next step marks finished (delay+1 frames total)
+        if _hyp_session["elapsed"] >= delay:
+            _hyp_session["finished"] = True
+            return jsonify(current_hyp_frame())
+        _hyp_session["elapsed"] += 1
+        if _hyp_session["elapsed"] >= delay:
+            _hyp_session["finished"] = True
+        return jsonify(current_hyp_frame())
+
     if _session["environment"] is None:
         rebuild_session()
-        return jsonify(current_steppable_frame())
+        return jsonify(current_sails_frame())
 
     if _session["finished"]:
-        return jsonify(current_steppable_frame())
+        return jsonify(current_sails_frame())
 
     agent = _session["agent"]
     environment = _session["environment"]
@@ -247,18 +300,20 @@ def api_steppable_step():
     hit_cap = cap is not None and day >= cap
     if finished or hit_cap:
         _session["finished"] = True
-        # Keep showing the day we just acted on
-        return jsonify(current_steppable_frame())
+        return jsonify(current_sails_frame())
 
     _session["day"] = day + 1
-    return jsonify(current_steppable_frame())
+    return jsonify(current_sails_frame())
 
 
 @app.route("/api/steppable/frame")
 def api_steppable_frame():
+    demo = _steppable_demo()
+    if demo == "hyperbolic_curve":
+        return jsonify(current_hyp_frame())
     if _session["environment"] is None:
         rebuild_session()
-    return jsonify(current_steppable_frame())
+    return jsonify(current_sails_frame())
 
 
 @app.route("/api/demo/<name>")
@@ -268,14 +323,6 @@ def api_demo(name):
         return jsonify(plot_series.sails_frame(agent, environment, state))
     if name == "aggregate_sail":
         return jsonify(plot_series.aggregate_frame(agent, environment, state))
-    if name == "hyperbolic_curve":
-        return jsonify(
-            plot_series.hyperbolic_frame(
-                _config["ll_value"],
-                _config["ll_delay"],
-                _config["discount_factor"],
-            )
-        )
     return jsonify({"error": f"Unknown demo: {name}"}), 404
 
 
@@ -511,6 +558,11 @@ PAGE = r"""
     min-height: 1.2em;
     margin: 0.35rem 0 0.5rem;
   }
+  #meta .choice {
+    color: var(--ink);
+    font-weight: 800;
+    opacity: 1;
+  }
   #chart {
     background: #fff;
     border: 1px solid #d8dde5;
@@ -574,9 +626,16 @@ PAGE = r"""
 
   <div class="panel">
     <div id="chromeSteppable" class="chrome">
+      <label style="flex-direction:row;align-items:center;gap:0.5rem;">
+        Demo
+        <select id="steppableDemoSelect">
+          <option value="visualizing_main">visualizing_main</option>
+          <option value="hyperbolic_curve">hyperbolic_curve</option>
+        </select>
+      </label>
       <button type="button" class="secondary" id="btnReset">Reset</button>
       <button type="button" class="action" id="btnStep">Step</button>
-      <span id="stepHint">visualizing_main — click Step to advance a day</span>
+      <span id="stepHint">Step advances the selected demo</span>
     </div>
     <div id="chromeNon" class="chrome hidden">
       <label style="flex-direction:row;align-items:center;gap:0.5rem;">
@@ -584,7 +643,6 @@ PAGE = r"""
         <select id="demoSelect">
           <option value="visualise_sails">visualise_sails</option>
           <option value="aggregate_sail">aggregate_sail</option>
-          <option value="hyperbolic_curve">hyperbolic_curve</option>
         </select>
       </label>
     </div>
@@ -627,10 +685,27 @@ const maxStepsEl = document.getElementById("maxSteps");
 const visionShort = document.getElementById("visionShort");
 const visionLong = document.getElementById("visionLong");
 const demoSelect = document.getElementById("demoSelect");
+const steppableDemoSelect = document.getElementById("steppableDemoSelect");
 const delayMaxEl = document.getElementById("delayMax");
 const delayStepEl = document.getElementById("delayStep");
 const btnStep = document.getElementById("btnStep");
 const btnReset = document.getElementById("btnReset");
+const stepHint = document.getElementById("stepHint");
+
+function steppableDemo() {
+  return steppableDemoSelect.value || "visualizing_main";
+}
+
+function syncStepHint() {
+  if (steppableDemo() === "hyperbolic_curve") {
+    stepHint.textContent =
+      "hyperbolic_curve — Step moves the reward one hour closer to day 0 (axes stay fixed)";
+  } else {
+    stepHint.textContent =
+      "visualizing_main — Step advances one decision day in the environment";
+  }
+}
+syncStepHint();
 
 function syncVisionButtons() {
   visionShort.classList.toggle("active", vision === "short");
@@ -747,7 +822,15 @@ function draw(payload) {
     },
     payload.layout || {}
   );
-  layout.uirevision = section + "|" + JSON.stringify(currentConfig()) + "|" + (demoSelect.value || "");
+  // Hyperbolic supplies its own uirevision so axes stay locked while stepping
+  if (!layout.uirevision) {
+    layout.uirevision =
+      section +
+      "|" +
+      JSON.stringify(currentConfig()) +
+      "|" +
+      (section === "steppable" ? steppableDemo() : demoSelect.value || "");
+  }
   const opts = {
     responsive: true,
     displayModeBar: true,
@@ -769,10 +852,20 @@ function draw(payload) {
       `horizon = ${m.horizon} · discount_factor = ${m.discount_factor}`;
   } else if (m.action_values) {
     const av = m.action_values;
-    let line = `choice = ${m.choice} · snack = ${av.snack.toFixed(4)} · resist = ${av.resist.toFixed(4)}`;
-    if (m.day != null) line = `Day ${m.day} · ` + line;
-    if (m.finished) line += " · finished";
-    metaEl.textContent = line;
+    const dayBit = m.day != null ? `Day ${m.day} · ` : "";
+    const doneBit = m.finished ? " · finished" : "";
+    metaEl.innerHTML =
+      dayBit +
+      `<span class="choice">Agent chooses ${m.choice}</span>` +
+      ` · snack = ${av.snack.toFixed(4)} · resist = ${av.resist.toFixed(4)}` +
+      doneBit;
+  } else if (payload.kind === "hyperbolic_curve") {
+    const doneBit = m.finished ? " · finished" : "";
+    metaEl.innerHTML =
+      `elapsed = ${m.elapsed}h · remaining = ${m.remaining}h · ` +
+      `<span class="choice">V(day 0) = ${m.perceived.toFixed(4)}</span>` +
+      ` · k = ${m.discount_factor}` +
+      doneBit;
   } else if (m.perceived != null) {
     metaEl.textContent = `perceived at t=0 = ${m.perceived.toFixed(4)}`;
   } else {
@@ -790,7 +883,7 @@ async function refresh() {
     let url;
     let method = "GET";
     if (section === "steppable") {
-      url = "/api/steppable/frame";
+      url = "/api/steppable/frame?demo=" + encodeURIComponent(steppableDemo());
     } else if (section === "nonsteppable") {
       url = "/api/demo/" + demoSelect.value;
     } else {
@@ -832,6 +925,23 @@ demoSelect.addEventListener("change", () => {
   if (section === "nonsteppable") refresh();
 });
 
+steppableDemoSelect.addEventListener("change", async () => {
+  syncStepHint();
+  finished = false;
+  btnStep.disabled = false;
+  try {
+    const res = await fetch("/api/steppable/reset", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ demo: steppableDemo() }),
+    });
+    if (!res.ok) throw new Error("HTTP " + res.status);
+    draw(await res.json());
+  } catch (err) {
+    metaEl.textContent = "Failed to switch demo: " + err;
+  }
+});
+
 function syncStickyLabels() {
   document.getElementById("delayMaxVal").textContent = delayMaxEl.value + "h";
   document.getElementById("delayStepVal").textContent = delayStepEl.value + "h";
@@ -855,22 +965,27 @@ syncStickyLabels();
 btnReset.addEventListener("click", async () => {
   try {
     await pushConfig();
-    const res = await fetch("/api/steppable/reset", { method: "POST" });
+    const res = await fetch("/api/steppable/reset", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ demo: steppableDemo() }),
+    });
     if (!res.ok) throw new Error("HTTP " + res.status);
-    const data = await res.json();
-    // reset leaves day=0; show day-1 frame via frame endpoint
-    await refresh();
+    draw(await res.json());
     finished = false;
     btnStep.disabled = false;
-    metaEl.textContent = (metaEl.textContent || "") + " · reset";
   } catch (err) {
-    metaEl.textContent = "Reset failed: " + err;
+    if (!err.configError) metaEl.textContent = "Reset failed: " + err;
   }
 });
 
 btnStep.addEventListener("click", async () => {
   try {
-    const res = await fetch("/api/steppable/step", { method: "POST" });
+    const res = await fetch("/api/steppable/step", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ demo: steppableDemo() }),
+    });
     if (!res.ok) throw new Error("HTTP " + res.status);
     draw(await res.json());
   } catch (err) {
