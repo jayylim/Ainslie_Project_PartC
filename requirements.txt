@@ -1,1 +1,4 @@
-numpy==2.0.2
+# visual_demos / (core agent code is stdlib-only)
+matplotlib>=3.8
+flask>=3.0
+numpy>=1.26

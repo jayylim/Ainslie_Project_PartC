@@ -21,13 +21,13 @@ env_params = {
     "start": 0,
     "decision_interval": 24,  # hours between decisions
     "rewards": {
-        "SS": {"value": 2, "delay": 0},   # snack now
-        "LL": {"value": 10, "delay": 12},  # hours after choice until weigh-in
+        "SS": {"value": 4, "delay": 0},   # snack now
+        "LL": {"value": 20, "delay": 12},  # hours after choice until weigh-in
     },
 }
 
 agent_params = {
-    "discount_factor": 0.8,
+    "discount_factor": 0.6,
     "vision": "long",  # "short" or "long"
     "horizon": 10,  # max # of decisions to plan; capped by remaining env decisions, includes the current day (min. 1)
 }

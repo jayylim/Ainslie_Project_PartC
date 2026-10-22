@@ -34,7 +34,7 @@ sticking           probability that on day t, the agent makes the same choice as
 horizon            # of decision nodes from get_horizon (short vision => 1)
 decision_interval  hours between choice nodes (Delta)
 discount_factor    k in V_hyp
-reward_a, delay_a  reward magnitude and base delay for action a's offer
+reward_a, delay_a  reward magnitude and base delay for action a's hyp_value
 reward_b, delay_b  same for action b
 persistence        P(a_t = a | a_0 = a); derived from s
 V_hyp              hyperbolic discounted value of one (reward, delay) pair
@@ -60,9 +60,9 @@ def stick_p_t(s, t):
     # P(a_t = a | a_0 = a) = 1/2 *(1 + (2s - 1)^t)
     return 0.5 * (1 + (2 * s - 1) ** t)
 
-
-def offer(agent, environment, state, action, t):
-    # Hyperbolic value of `action`'s offer delayed by t decision intervals.
+# have to make a separate valuation method because agent's method automatically aggregates 
+def hyp_value(agent, environment, state, action, t):
+    # Hyperbolic value of `action`'s value delayed by t decision intervals.
     _, outcomes = environment.simulate(state, action)
     decision_interval = environment.decision_interval
     total = 0.0
@@ -73,32 +73,47 @@ def offer(agent, environment, state, action, t):
     return total
 
 
-def V(agent, environment, state, a, s):
+def value_table(agent, environment, state, s):
     """
-    Sticky bundle value V(a): expected sum of day-t offers under stickiness s.
-    a is today's candidate; b is the other action.
+    Shared foresight table (independent of today's candidate):
+    stick_p_t and V_hyp(snack), V_hyp(resist) at each t.
     """
     horizon = agent.get_horizon(state, environment)
+    rows = []
+    for t in range(horizon):
+        rows.append(
+            {
+                "t": t,
+                "stick_p_t": stick_p_t(s, t),
+                "v_snack": hyp_value(agent, environment, state, "snack", t),
+                "v_resist": hyp_value(agent, environment, state, "resist", t),
+            }
+        )
+    return rows
+
+
+def V_from_table(table, a):
+    """
+    Sticky bundle value V(a) from the shared value table.
+    a is today's candidate; b is the other action.
+    EV_t = stick_p_t * V_hyp(a) + (1 - stick_p_t) * V_hyp(b)
+    """
     b = OTHER[a]
+    v_key = {"snack": "v_snack", "resist": "v_resist"}
     total = 0.0
     breakdown = []
-
-    for t in range(horizon):
-        sticking = stick_p_t(s, t)
-        v_same = offer(agent, environment, state, a, t)
-        v_other = offer(agent, environment, state, b, t)
+    for row in table:
+        sticking = row["stick_p_t"]
+        v_same = row[v_key[a]]
+        v_other = row[v_key[b]]
         expected_day_value = sticking * v_same + (1 - sticking) * v_other
         total += expected_day_value
         breakdown.append(
             {
-                "t": t,
-                "sticking": sticking,
-                "v_same": v_same,
-                "v_other": v_other,
+                "t": row["t"],
                 "expected_day_value": expected_day_value,
             }
         )
-
     return total, breakdown
 
 
@@ -118,39 +133,51 @@ def main():
     print(f"decision_interval={decision_interval}h  discount_factor={discount_factor}")
     print()
 
-    V_values = {}
-    for action in environment.get_actions(state):
-        value, breakdown = V(agent, environment, state, action, s)
-        V_values[action] = value
-        b = OTHER[action]
-
-        # print values for sanity checking
-        print(f"--- Evaluating '{action}' today ---")
-        print(
-            f"{'t':>3}  {'sticking':>8}  {f'V_{{{action}}}':>10}  {f'V_{{{b}}}':>10}  {'EV of day':>10}"
-        )
-        for row in breakdown:
-            print(
-                f"{row['t']:3d}  {row['sticking']:8.4f}  {row['v_same']:10.4f}  "
-                f"{row['v_other']:10.4f}  {row['expected_day_value']:10.4f}"
-            )
-        print(f"V({action}) = {value:.6f}\n")
-
-    choice = greedy_from_values(V_values)
-
-    # print final results
+    # --- 1. Generate shared value table ---
+    table = value_table(agent, environment, state, s)
     print(
-        f"Sticky V: snack={V_values['snack']:.6f}  "
-        f"resist={V_values['resist']:.6f}"
+        "Table 1 — Discounted values from today\n"
+        " V_hyp(choice) = value_choice / (1 + discount_factor * delay)\n"
+        " stick_p_t = P(a_t = a | a_0 = a) = 1/2 *(1 + (2s - 1)^t)"
     )
-    print(f"Would choose {choice}")
+    print(f"{'t':>3}  {'stick_p_t':>10}  {'V_hyp(snack)':>14}  {'V_hyp(resist)':>14}")
+    for row in table:
+        print(
+            f"{row['t']:3d}  {row['stick_p_t']:10.4f}  {row['v_snack']:14.4f}  "
+            f"{row['v_resist']:14.4f}"
+        )
     print()
 
-    # Baseline (i.e. Main) pure commitment via unchanged HypAgent (implicit s = 1)
+    # --- 2. Expected day value under stickiness (both branches side by side) ---
+    V_snack, snack_rows = V_from_table(table, "snack")
+    V_resist, resist_rows = V_from_table(table, "resist")
+    V_values = {"snack": V_snack, "resist": V_resist}
+
+    print(
+        "Table 2 — Expected day value by branch\n"
+        "  EV_t | choice first = stick_p_t * V_hyp(choice) + (1-stick_p_t) * V_hyp(other)\n"
+    )
+    print(f"{'t':>3}  {'snack first':>14}  {'resist first':>14}")
+    for snack_row, resist_row in zip(snack_rows, resist_rows):
+        print(
+            f"{snack_row['t']:3d}  {snack_row['expected_day_value']:14.4f}  "
+            f"{resist_row['expected_day_value']:14.4f}"
+        )
+    print(f"{'sum':>3}  {V_snack:14.6f}  {V_resist:14.6f}")
+    print()
+
+    # --- 3. Sticky choice vs s=1 baseline ---
+    choice = greedy_from_values(V_values)
+    print(f"Sticky agent (s={s}) would choose {choice}")
+    print()
+
     baseline_action, baseline_values = agent.choose_action(state, environment)
     print(
-        f"Baseline (agent aggregate_value, s=1): "
-        f"snack={baseline_values['snack']:.6f}  "
+        "Baseline (s=1, pure commitment via HypAgent.aggregate_value): "
+        "assumes today's action is repeated every foresight day."
+    )
+    print(
+        f"  snack={baseline_values['snack']:.6f}  "
         f"resist={baseline_values['resist']:.6f}"
     )
     print(f"Baseline would choose {baseline_action}")

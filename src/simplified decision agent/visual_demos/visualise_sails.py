@@ -39,7 +39,7 @@ from main import agent_params, env_params
 COLORS = {
     "snack": "#c44e52",
     "resist": "#4c72b0",
-    "snack_agg": "#e89a9e",
+    "snack_agg": "#e89a9e", #aggregate colours are lighter versions of the individual colours
     "resist_agg": "#8fb0d9",
 }
 
@@ -125,8 +125,8 @@ def plot_aggregates(axes, action_values):
         label="snack aggregate",
     )
     axes.text(
-        -1,
-        snack_agg,
+        -2,
+        snack_agg+1,
         f"{snack_agg:.2f}",
         color=COLORS["snack_agg"],
         va="bottom",
@@ -145,7 +145,7 @@ def plot_aggregates(axes, action_values):
         label="resist aggregate",
     )
     axes.text(
-        -1,
+        -2,
         resist_agg,
         f"{resist_agg:.2f}",
         color=COLORS["resist_agg"],

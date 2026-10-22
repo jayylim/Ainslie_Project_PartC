@@ -2,22 +2,6 @@
 
 Hyperbolic discounter on a memoryless SS/LL timeline (Ainslie-style bundling). Edit params in `main.py`, then run from this directory.
 
-## Architecture canvas
-
-Interactive outline (read order, runtime, visual demos) — open in Cursor beside the chat:
-
-**[Architecture Outline](/Users/joshualim/.cursor/projects/Users-joshualim-Desktop-Part-C-Ainslie-Agents/canvases/architecture-outline.canvas.tsx)**
-
-```
-/Users/joshualim/.cursor/projects/Users-joshualim-Desktop-Part-C-Ainslie-Agents/canvases/architecture-outline.canvas.tsx
-```
-
-That path is the Cursor-managed canvas for this workspace (not inside the git tree). In Cursor, click the link above or open the file via path to view it.
-
----
-
-
-
 ## Vision modes
 
 Set `agent_params["vision"]` in `main.py`:
@@ -42,11 +26,11 @@ Whether that commitment is deterministic or stochastic depends on the stickiness
 
 
 
-## Core contract
+## Archtecture Core
 
 - Agent talks to the env only via `get_actions` / `simulate`
 - Env advances time with `step`
-- Discounting lives only in the agent
+- Discounting lives only in the agent under `value_function`
 - Sticky path replaces pure aggregate with weighted SS/LL mixes via `stick_p_t(s, t)`; at `s = 1` it matches `HypAgent` long vision
 
 
@@ -67,13 +51,13 @@ Whether that commitment is deterministic or stochastic depends on the stickiness
 
 ## Read order
 
-1. `main.py` — params + canonical day loop
-2. `environments/timeline.py` — what a day is (hours, SS/LL, memoryless)
-3. `agents/hyperbolic.py` — values and choices (short vs long)
-4. `sticky_decisions.py` — soft commitment (`s < 1`) on the same core
-5. `visual_demos/*` — illustrations; none change the core
+1. `environments/timeline.py` — type of decision timeline/horizon (hours, SS/LL, memoryless)
+2. `agents/hyperbolic.py` — value function and decision-making logic
+3. `main.py` — config parameters; run to decision making loop (printout values)
+4. `sticky_decisions.py` — adds stickiness parameter (uses same agent and environment)
+5. `visual_demos/*` — illustrations with varying parameters
 
-Skip `__init__.py` files (package markers only).
+`__init__.py` files  are just package markers only
 
 ## Runtime order
 
@@ -89,24 +73,35 @@ Skip `__init__.py` files (package markers only).
 
 ## Quick start
 
+Use the project virtualenv (Python 3.11). From the repo root:
+
+```bash
+python3.11 -m venv .venv          # once, if .venv is missing
+source .venv/bin/activate
+pip install -r requirements.txt   # once, or after requirements change
+```
+
+Then run from the package directory:
+
 ```bash
 cd "src/simplified decision agent"
 python main.py
 ```
 
-Sticky valuation at the first decision node (no env stepping):
+(With stickiness parameter) Valuation at the first decision node ONLY (no stepping through env):
 
 ```bash
 python -m sticky_decisions
 ```
 
----
+Cursor/VS Code should pick `.venv` automatically via `.vscode/settings.json`. If the wrong interpreter is selected, choose **Python: Select Interpreter** → `.venv/bin/python`.
 
+---
 
 
 ## Visual demos
 
-Each demo is independent: own entrypoint, own question. They share params/core but do not depend on each other. Run from this package root.
+Each demo is an independent visualiation to demonstrate different layers/variations of the effect . They share params/core but do not depend on each other. Run from this package root.
 
 
 | Demo                      | Description                                                                                                                                                                    | Run                                                                    |
@@ -116,9 +111,31 @@ Each demo is independent: own entrypoint, own question. They share params/core b
 | `aggregate_sail.py`       | Shows the effective sail that the observer currently sees: the aggregate of all discounted values across their vision horizon.                                                 | `python -m visual_demos.aggregate_sail`                                |
 | `visualizing_main.py`     | Same as `visualise_sails`, except the user can step through the environment. Accumulated rewards are not tallied or considered (stateless agent).                              | `python -m visual_demos.visualizing_main`                              |
 | `sticky_graph.py (WIP)`   | For each stickiness `s` and LL delay, the maximum SS that can still be resisted (indifference frontier).                                                                       | `python -m visual_demos.sticky_graph`                                  |
-| `sticky_web_app.py (WIP)` | Same frontier as `sticky_graph`, with live sliders for delay range and LL magnitude.                                                                                           | `python -m visual_demos.sticky_web_app` → open `http://127.0.0.1:5000` |
+| `web app/demo_web_app.py` | Unified UI: steppable / non-steppable / sticky demos with shared param controls (rewards, delays, length, horizon, vision).                                                     | See [Unified web app](#unified-web-app-local) below                    |
 
 
+### Unified web app (local)
+
+Interactive browser UI over the demos above (Steppable / Non-steppable / Sticky tabs). Same venv and deps as [Quick start](#quick-start).
+
+From the **repo root**:
+
+```bash
+python3.11 -m venv .venv          # once, if .venv is missing
+source .venv/bin/activate
+pip install -r requirements.txt   # once, or after requirements change
+```
+
+Then from the package directory:
+
+```bash
+cd "src/simplified decision agent"
+python "web app/demo_web_app.py"
+```
+
+Open **http://127.0.0.1:5050** in Firefox, Chrome, or Safari (use `127.0.0.1`, not `localhost` — on macOS, `localhost:5000` is often AirPlay and returns 403). Stop the server with `Ctrl+C`.
+
+Params at the top (SS/LL rewards and delays, env length, horizon, short/long vision) apply to every tab. Sticky has extra LL delay max/step sliders; Plotly loads from a CDN (needs network on first load).
 
 
 ## Learning paths
@@ -128,7 +145,8 @@ Each demo is independent: own entrypoint, own question. They share params/core b
 | -------------------- | ------------------------------------------------------------------------------ |
 | Decision loop        | `main.py` → `timeline.py` → `hyperbolic.py` → (optional) `visualizing_main.py` |
 | Discounting visually | `hyperbolic_curve.py` → `visualise_sails.py` / `aggregate_sail.py`             |
-| Stickiness           | `sticky_decisions.py` → `sticky_graph.py` → `sticky_web_app.py`                |
+| Stickiness           | `sticky_decisions.py` → `sticky_graph.py` → `web app/demo_web_app.py` (Sticky tab) |
+| All demos in one UI  | `web app/demo_web_app.py`                                                      |
 
 
 

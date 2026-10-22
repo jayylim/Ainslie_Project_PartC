@@ -208,14 +208,18 @@ def draw_frame(axes, agent, environment, state, steps):
     print(f"LL delay | V(reward, delay) from now:")
     for delay, reward in ll_events:
         v = agent.value_function(reward, delay)
-        print(f"Day {delay//12}   {delay}h  Value={v:.4f}")
+        print(f"Day {-(-delay//24)} | {delay}h  Value={v:.4f}")
     print(
         f"Current choice values: snack={action_values['snack']:.4f}  "
         f"resist={action_values['resist']:.4f}"
     )
     print(f"Would choose {action}")
 
-    return action
+    # Sanity: LL − SS aggregate value at the current decision (day 0). Should increase as horizon shortens.
+    ll_ss_gap = action_values["resist"] - action_values["snack"]
+    print(f"LL−SS at day 0: {ll_ss_gap:.4f}")
+
+    return action, ll_ss_gap
 
 
 def main():
@@ -225,18 +229,21 @@ def main():
 
     finished = False
     steps = 0
+    ll_ss_gaps = []  # LL−SS at day 0 each step (does it shrink as horizon shortens?)
 
     fig, axes = plt.subplots(figsize=(10, 5))
     print("Starting visualisation (click / keypress to advance)...")
 
     while not finished and (max_steps is None or steps < max_steps):
         steps += 1
-        action = draw_frame(axes, agent, environment, state, steps)
+        action, ll_ss_gap = draw_frame(axes, agent, environment, state, steps)
+        ll_ss_gaps.append(ll_ss_gap)
         state, finished = environment.step(action)
         plt.tight_layout()
         plt.pause(0.05)
         plt.waitforbuttonpress()
 
+    print(f"Day {steps} LL−SS gap: {ll_ss_gaps}")
     print("Done.")
     plt.show()
 

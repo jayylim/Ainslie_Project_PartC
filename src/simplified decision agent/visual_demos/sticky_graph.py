@@ -98,6 +98,12 @@ stickiness_x = [
     for i in range(n_stickiness_points)
 ]
 
+# One hue: short delays (top of chart) lightest / most transparent;
+# longer delays darker / more opaque
+base_rgb = matplotlib.colors.to_rgb("#1f4e79")
+delay_lo, delay_hi = min(ll_delays), max(ll_delays)
+delay_span = max(delay_hi - delay_lo, 1)
+
 fig, axes = plt.subplots()
 for delay_LL in ll_delays:
     # critical SS for this LL delay over the stickiness range
@@ -107,7 +113,21 @@ for delay_LL in ll_delays:
         )
         for s in stickiness_x
     ]
-    axes.plot(stickiness_x, max_ss_values, label=f"LL delay = {delay_LL}h")
+    # 0 = shortest delay, 1 = longest
+    t = (delay_LL - delay_lo) / delay_span
+    # short delay → light + transparent; long delay → dark + opaque
+    # lightness capped so short-delay lines stay visible on white
+    lightness = 0.55 - 0.55 * t
+    color = tuple(c + (1.0 - c) * lightness for c in base_rgb)
+    # transparency capped at ~30% (alpha >= 0.70)
+    alpha = 0.70 + 0.30 * t
+    axes.plot(
+        stickiness_x,
+        max_ss_values,
+        color=color,
+        alpha=alpha,
+        label=f"LL delay = {delay_LL}h",
+    )
 
 axes.set_xlabel("Stickiness s")
 axes.set_ylabel("Max SS resisted (min SS to choose snack over resist)")
@@ -124,3 +144,4 @@ axes.grid(True, which="minor", alpha=0.2)
 axes.legend()
 
 plt.show()
+
