@@ -13,8 +13,6 @@ Set `agent_params["vision"]` in `main.py`:
 | `long`  | Bundling — aggregate value over the planning horizon |
 
 
-
-
 ## What a bundled choice entails
 
 A choice is more often between extended experiences than individual events (Ainslie, 2001, pp. 84). The agent is therefore assumed to make a **categorical** choice: as if the current choice is also a commitment to making similar choices in the future.
@@ -26,7 +24,7 @@ Whether that commitment is deterministic or stochastic depends on the stickiness
 
 
 
-## Archtecture Core
+## Architecture Core
 
 - Agent talks to the env only via `get_actions` / `simulate`
 - Env advances time with `step`
@@ -38,28 +36,28 @@ Whether that commitment is deterministic or stochastic depends on the stickiness
 ### Layers
 
 
-| Layer          | Files                                               | Role                                                            |
-| -------------- | --------------------------------------------------- | --------------------------------------------------------------- |
-| Entry / params | `main.py` · `sticky_decisions.py`                   | Owns `env_params`, `agent_params`, `max_steps`; sticky adds `s` |
-| Core           | `environments/timeline.py` · `agents/hyperbolic.py` | Timeline offers SS/LL; HypAgent discounts and chooses           |
-| Outcomes       | main run loop · sticky · `visual_demos/*`           | Independent products that call core; never redefine it          |
+| Layer         | Files                                                        | Role                                                                   |
+| ------------- | ------------------------------------------------------------ | ---------------------------------------------------------------------- |
+| Config Params | `main.py` · `sticky_decisions.py`                            | Owns `env_params`, `agent_params`, `max_steps`; sticky adds `s`        |
+| Logic Core    | `environments/timeline.py` · `agents/hyperbolic.py`          | Timeline offers SS/LL; HypAgent discounts and chooses                  |
+| Outcomes      | main run loop · sticky_decisions run loop · `visual_demos/*` | Independent products that call core logic to observe agent's decisions |
+| Web UI        | `web app/demo_web_app.py` · `web app/plot_series.py`         | Flask + Plotly; series builders mirror visual demos                    |
 
 
 ---
 
-
-
 ## Read order
 
-1. `environments/timeline.py` — type of decision timeline/horizon (hours, SS/LL, memoryless)
+1. `environments/timeline.py` — environment defaults and available actions/paths within environment
 2. `agents/hyperbolic.py` — value function and decision-making logic
-3. `main.py` — config parameters; run to decision making loop (printout values)
+3. `main.py` — config parameters; run to view decision computations (printout values)
 4. `sticky_decisions.py` — adds stickiness parameter (uses same agent and environment)
-5. `visual_demos/*` — illustrations with varying parameters
+5. `visual_demos/*` — illustrations with varying parameters and contexts for demonstration
+6. `web app/*` — unified browser UI over the demos (`plot_series` builds Plotly payloads)
 
 `__init__.py` files  are just package markers only
 
-## Runtime order
+## Runtime order ([main.py](http://main.py))
 
 1. Load params from `main.py`
 2. Build `TimelineEnvironment` + `HypAgent`
@@ -99,24 +97,27 @@ Cursor/VS Code should pick `.venv` automatically via `.vscode/settings.json`. If
 ---
 
 
+
 ## Visual demos
 
-Each demo is an independent visualiation to demonstrate different layers/variations of the effect . They share params/core but do not depend on each other. Run from this package root.
+Each demo is an independent visualisation to demonstrate different layers/variations of the effect. They share params/core but do not depend on each other. Run from this package root.
 
 
-| Demo                      | Description                                                                                                                                                                    | Run                                                                    |
-| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------- |
-| `hyperbolic_curve.py`     | Very simplified visualisation of how a hyperbolically discounted reward looks as the agent approaches its delivery time.                                                       | `python visual_demos/hyperbolic_curve.py`                              |
-| `visualise_sails.py`      | Shows the choices the agent imagines/simulates during its current instance of decision making. Subsequent choice values are discounted to the current decision-node time step. | `python -m visual_demos.visualise_sails`                               |
-| `aggregate_sail.py`       | Shows the effective sail that the observer currently sees: the aggregate of all discounted values across their vision horizon.                                                 | `python -m visual_demos.aggregate_sail`                                |
-| `visualizing_main.py`     | Same as `visualise_sails`, except the user can step through the environment. Accumulated rewards are not tallied or considered (stateless agent).                              | `python -m visual_demos.visualizing_main`                              |
-| `sticky_graph.py (WIP)`   | For each stickiness `s` and LL delay, the maximum SS that can still be resisted (indifference frontier).                                                                       | `python -m visual_demos.sticky_graph`                                  |
-| `web app/demo_web_app.py` | Unified UI: steppable / non-steppable / sticky demos with shared param controls (rewards, delays, length, horizon, vision).                                                     | See [Unified web app](#unified-web-app-local) below                    |
+| Demo                      | Description                                                                                                                                                                    | Run                                                 |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------- |
+| `hyperbolic_curve.py`     | Very simplified visualisation of how a hyperbolically discounted reward looks as the agent approaches its delivery time.                                                       | `python visual_demos/hyperbolic_curve.py`           |
+| `visualise_sails.py`      | Shows the choices the agent imagines/simulates during its current instance of decision making. Subsequent choice values are discounted to the current decision-node time step. | `python -m visual_demos.visualise_sails`            |
+| `aggregate_sail.py`       | Shows the effective sail that the observer currently sees: the aggregate of all discounted values across their vision horizon.                                                 | `python -m visual_demos.aggregate_sail`             |
+| `visualizing_main.py`     | Same as `visualise_sails`, except the user can step through the environment. Accumulated rewards are not tallied or considered (stateless agent).                              | `python -m visual_demos.visualizing_main`           |
+| `sticky_graph.py`         | For each stickiness `s` and LL delay, the maximum SS that can still be resisted (indifference frontier).                                                                       | `python -m visual_demos.sticky_graph`               |
+| `web app/demo_web_app.py` | Unified UI: steppable / non-steppable / sticky demos with shared param controls.                                                                                               | See [Unified web app](#unified-web-app-local) below |
+
+
 
 
 ### Unified web app (local)
 
-Interactive browser UI over the demos above (Steppable / Non-steppable / Sticky tabs). Same venv and deps as [Quick start](#quick-start).
+Interactive browser UI over the demos above. Same venv and deps as [Quick start](#quick-start) (`flask` is in `requirements.txt`).
 
 From the **repo root**:
 
@@ -133,34 +134,18 @@ cd "src/simplified decision agent"
 python "web app/demo_web_app.py"
 ```
 
-Open **http://127.0.0.1:5050** in Firefox, Chrome, or Safari (use `127.0.0.1`, not `localhost` — on macOS, `localhost:5000` is often AirPlay and returns 403). Stop the server with `Ctrl+C`.
+Open **[http://127.0.0.1:5050](http://127.0.0.1:5050)** in Firefox, Chrome, or Safari (use `127.0.0.1`, not `localhost` — on macOS, `localhost:5000` is often AirPlay and returns 403). Stop the server with `Ctrl+C`.
 
-Params at the top (SS/LL rewards and delays, env length, horizon, short/long vision) apply to every tab. Sticky has extra LL delay max/step sliders; Plotly loads from a CDN (needs network on first load).
+**Shared params** (apply to every tab): SS/LL rewards and delays, env length, agent horizon, discount factor `k`, max steps, short/long vision. Clear length or horizon for *none* (at least one must be set). Blank max steps = no run cap (same as `main.max_steps = None`).
 
-
-## Learning paths
-
-
-| Goal                 | Path                                                                           |
-| -------------------- | ------------------------------------------------------------------------------ |
-| Decision loop        | `main.py` → `timeline.py` → `hyperbolic.py` → (optional) `visualizing_main.py` |
-| Discounting visually | `hyperbolic_curve.py` → `visualise_sails.py` / `aggregate_sail.py`             |
-| Stickiness           | `sticky_decisions.py` → `sticky_graph.py` → `web app/demo_web_app.py` (Sticky tab) |
-| All demos in one UI  | `web app/demo_web_app.py`                                                      |
+**Tabs:**
 
 
+| Tab           | Demos                                   | Controls                                             |
+| ------------- | --------------------------------------- | ---------------------------------------------------- |
+| Steppable     | `visualizing_main` · `hyperbolic_curve` | Reset / Step — env days, or reward approaching day 0 |
+| Non-steppable | `visualise_sails` · `aggregate_sail`    | Demo select only                                     |
+| Sticky        | sticky indifference frontier            | Extra LL delay max / step sliders                    |
 
 
-## Who owns what
-
-
-| Owner            | Owns                                              |
-| ---------------- | ------------------------------------------------- |
-| Timeline         | Time and offers (SS now / LL later)               |
-| HypAgent         | Perceived value and greedy choice (short vs long) |
-| main             | Closed-loop day simulation                        |
-| sticky_decisions | Soft commitment valuation at one node             |
-| visual_demos     | Explanations; call core, never redefine it        |
-
-
-Sticky valuation is a snapshot at the first decision node — it does not step the environment. Baseline comparison in `sticky_decisions` uses unchanged `HypAgent` (implicit `s = 1`).
+Plotly loads from a CDN (needs network on first load). Math lives in `web app/plot_series.py` (mirrors the matplotlib demos); the browser only draws.
