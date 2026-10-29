@@ -1,3 +1,4 @@
 from .hyperbolic import HypAgent
+from .sticky import StickyHypAgent
 
-__all__ = ["HypAgent"]
+__all__ = ["HypAgent", "StickyHypAgent"]

@@ -9,7 +9,7 @@ Reuses main.py, hyperbolic.py, and timeline.py params and helpers.
 Definitions and notation (see legend at bottom of this docstring):
 
     s   = P(a_{t+1} = a_t)                         stickiness
-    stick_p_t = 1/2 + 1/2 * (2s - 1)^t                   persistence of today's action (collapses all possible trees where you arrive here)
+    stick_p_t = 1/2 + 1/2 * (2s - 1)^t             persistence of today's action (collapses all possible trees where you arrive here)
     V_hyp(reward, delay) = reward / (1 + discount_factor * delay)
     day_t value = stick_p_t * V_hyp(reward_a, delay_a + t in days) + (1-stick_p_t) * V_hyp(reward_b, delay_b + t in days) # the value of ending on said action at day_t
     V(action) = sum_{t=0}^{horizon-1} [
@@ -30,12 +30,11 @@ a                  candidate action being valued today (snack or resist)
 b                  the other action (not a)
 a_t                action on foresight day t (random under stickiness)
 t                  foresight day index, t = 0 .. horizon-1 (0 = today)
-sticking           probability that on day t, the agent makes the same choice as day 0
-horizon            # of decision nodes from get_horizon (short vision => 1)
-decision_interval  hours between choice nodes (Delta)
+stick_p_t          P(a_t = a | a_0 = a) = 1/2 * (1 + (2s - 1)^t)
+horizon            # of foresight decision nodes
+decision_interval  hours between choice nodes
 discount_factor    k in V_hyp
-reward_a, delay_a  reward magnitude and base delay for action a's hyp_value
-reward_b, delay_b  same for action b
+reward, delay      magnitude and base delay (hours) for an action's outcome
 persistence        P(a_t = a | a_0 = a); derived from s
 V_hyp              hyperbolic discounted value of one (reward, delay) pair
 V(a)               expected bundled value of choosing a today under s
@@ -140,7 +139,7 @@ def main():
         " V_hyp(choice) = value_choice / (1 + discount_factor * delay)\n"
         " stick_p_t = P(a_t = a | a_0 = a) = 1/2 *(1 + (2s - 1)^t)"
     )
-    print(f"{'t':>3}  {'stick_p_t':>10}  {'V_hyp(snack)':>14}  {'V_hyp(resist)':>14}")
+    print(f"{'Day t':>3}  {'stick_p_t':>10}  {'V_hyp(snack)':>14}  {'V_hyp(resist)':>14}")
     for row in table:
         print(
             f"{row['t']:3d}  {row['stick_p_t']:10.4f}  {row['v_snack']:14.4f}  "
@@ -155,15 +154,17 @@ def main():
 
     print(
         "Table 2 — Expected day value by branch\n"
-        "  EV_t | choice first = stick_p_t * V_hyp(choice) + (1-stick_p_t) * V_hyp(other)\n"
+        "  EV_t | choice first = stick_p_t * V_hyp(a) + (1-stick_p_t) * V_hyp(b)\n"
     )
-    print(f"{'t':>3}  {'snack first':>14}  {'resist first':>14}")
+    col = 22
+    print(f"{'t':>3}  {'a = snack':^{col}}  {'a = resist':^{col}}")
+    print(f"{'':>3}  {'(snack first)':^{col}}  {'(resist first)':^{col}}")
     for snack_row, resist_row in zip(snack_rows, resist_rows):
         print(
-            f"{snack_row['t']:3d}  {snack_row['expected_day_value']:14.4f}  "
-            f"{resist_row['expected_day_value']:14.4f}"
+            f"{snack_row['t']:3d}  {snack_row['expected_day_value']:{col}.4f}  "
+            f"{resist_row['expected_day_value']:{col}.4f}"
         )
-    print(f"{'sum':>3}  {V_snack:14.6f}  {V_resist:14.6f}")
+    print(f"{'sum':>3}  {V_snack:{col}.6f}  {V_resist:{col}.6f}")
     print()
 
     # --- 3. Sticky choice vs s=1 baseline ---
