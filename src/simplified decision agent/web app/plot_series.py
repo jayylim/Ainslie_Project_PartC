@@ -13,14 +13,15 @@ from sticky_decisions import stick_p_t
 COLORS = {
     "snack": "#c44e52",
     "resist": "#4c72b0",
-    "snack_agg": "#e89a9e",
-    "resist_agg": "#8fb0d9",
+    # Lighter tint for option sails; aggregates use the opaque snack / resist colours
+    "snack_sail": "#e89a9e",
+    "resist_sail": "#8fb0d9",
 }
 
 # Hours left of the marker for left-side numerals.
 # Aggregates sit further left than per-outcome discounted values.
-LABEL_DISCOUNT_OFFSET = 8
-LABEL_AGG_OFFSET = 12
+LABEL_DISCOUNT_OFFSET = 2
+LABEL_AGG_OFFSET = 5
 
 
 def _choice_title(prefix, action):
@@ -76,8 +77,8 @@ def foreseeable_events(agent, environment, state):
     )
 
 
-def _value_label(x, y, text, *, color, position="middle left"):
-    """Numeral only (no marker). Colour matches matplotlib text on that series."""
+def _value_label(x, y, text, *, color, position="middle left", size=12):
+    """Numeral only (no marker). Labels use opaque hues; sails stay lighter."""
     return {
         "type": "scatter",
         "mode": "text",
@@ -85,7 +86,7 @@ def _value_label(x, y, text, *, color, position="middle left"):
         "y": [y],
         "text": [text],
         "textposition": position,
-        "textfont": {"color": color, "size": 12},
+        "textfont": {"color": color, "size": size},
         "showlegend": False,
         "hoverinfo": "skip",
     }
@@ -93,11 +94,13 @@ def _value_label(x, y, text, *, color, position="middle left"):
 
 def _ll_sail_trace(agent, delay, reward, decision_t, *, label=None, show_legend=True):
     """One LL hyperbolic sail + tip / decision-node markers."""
+    sail_color = COLORS["resist_sail"]
+    label_color = COLORS["resist"]
     xs = list(range(0, delay + 1))
     ys = [agent.value_function(reward, delay - t) for t in xs]
     tip = ys[-1] if ys else 0
     decision_val = agent.value_function(reward, delay - decision_t)
-    # Discounted value at decision node — left of marker, but right of aggregates
+    # Discounted value at decision node — just left of marker
     decision_label_x = decision_t - LABEL_DISCOUNT_OFFSET
 
     traces = [
@@ -106,7 +109,7 @@ def _ll_sail_trace(agent, delay, reward, decision_t, *, label=None, show_legend=
             "mode": "lines",
             "x": xs,
             "y": ys,
-            "line": {"color": COLORS["resist"], "width": 2},
+            "line": {"color": sail_color, "width": 2},
             "name": label or "resist",
             "showlegend": show_legend and label is not None,
             "hovertemplate": "t=%{x}h<br>V=%{y:.3f}<extra></extra>",
@@ -116,19 +119,19 @@ def _ll_sail_trace(agent, delay, reward, decision_t, *, label=None, show_legend=
             "mode": "markers",
             "x": [delay],
             "y": [tip],
-            "marker": {"size": 9, "color": COLORS["resist"]},
+            "marker": {"size": 9, "color": sail_color},
             "showlegend": False,
             "hoverinfo": "skip",
         },
         _value_label(
-            delay, tip, f"{tip:.2f}", color=COLORS["resist"], position="top right"
+            delay, tip + 0.5, f"{tip:.2f}", color=label_color, position="top right"
         ),
         {
             "type": "scatter",
             "mode": "markers",
             "x": [decision_t],
             "y": [decision_val],
-            "marker": {"size": 8, "color": COLORS["resist"]},
+            "marker": {"size": 8, "color": sail_color},
             "showlegend": False,
             "hoverinfo": "skip",
         },
@@ -136,7 +139,7 @@ def _ll_sail_trace(agent, delay, reward, decision_t, *, label=None, show_legend=
             decision_label_x,
             decision_val,
             f"{decision_val:.2f}",
-            color=COLORS["resist"],
+            color=label_color,
             position="middle left",
         ),
     ]
@@ -148,7 +151,7 @@ def _ll_sail_trace(agent, delay, reward, decision_t, *, label=None, show_legend=
             "y0": 0,
             "y1": 1,
             "yref": "paper",
-            "line": {"color": COLORS["resist"], "width": 1, "dash": "dot"},
+            "line": {"color": sail_color, "width": 1, "dash": "dot"},
             "opacity": 0.45,
         },
         {
@@ -166,103 +169,131 @@ def _ll_sail_trace(agent, delay, reward, decision_t, *, label=None, show_legend=
     return traces, shapes, y_max
 
 
-def _ss_point_traces(agent, ss_events):
+def _ss_sail_traces(agent, ss_events):
+    """SS at the current decision is a tip scatter; later SS get sails back to t=0."""
+    sail_color = COLORS["snack_sail"]
+    label_color = COLORS["snack"]
     traces = []
     y_max = 0
     for i, (delay, reward) in enumerate(ss_events):
-        tip = agent.value_function(reward, 0)
-        y_max = max(y_max, tip)
+        # Labels sit left of the tip so they stay clear of crossing sails
+        tip_label_x = delay - LABEL_DISCOUNT_OFFSET
+        if delay == 0:
+            tip = agent.value_function(reward, 0)
+            y_max = max(y_max, tip)
+            traces.append(
+                {
+                    "type": "scatter",
+                    "mode": "markers",
+                    "x": [delay],
+                    "y": [tip],
+                    "marker": {"size": 10, "color": sail_color},
+                    "name": "snack",
+                    "showlegend": i == 0,
+                    "hovertemplate": "SS @ %{x}h<br>V=%{y:.3f}<extra></extra>",
+                }
+            )
+            traces.append(
+                _value_label(
+                    tip_label_x,
+                    tip + 0.5,
+                    f"{tip:.2f}",
+                    color=label_color,
+                    position="middle left",
+                )
+            )
+            continue
+
+        xs = list(range(0, delay + 1))
+        ys = [agent.value_function(reward, delay - t) for t in xs]
+        tip = ys[-1] if ys else 0
+        y_max = max(y_max, max(ys) if ys else 0)
+        traces.append(
+            {
+                "type": "scatter",
+                "mode": "lines",
+                "x": xs,
+                "y": ys,
+                "line": {"color": sail_color, "width": 2},
+                "name": "snack",
+                "showlegend": i == 0,
+                "hovertemplate": "t=%{x}h<br>V=%{y:.3f}<extra></extra>",
+            }
+        )
         traces.append(
             {
                 "type": "scatter",
                 "mode": "markers",
                 "x": [delay],
                 "y": [tip],
-                "marker": {"size": 10, "color": COLORS["snack"]},
-                "name": "snack",
-                "showlegend": i == 0,
-                "hovertemplate": "SS @ %{x}h<br>V=%{y:.3f}<extra></extra>",
+                "marker": {"size": 10, "color": sail_color},
+                "showlegend": False,
+                "hoverinfo": "skip",
             }
         )
         traces.append(
             _value_label(
-                delay, tip, f"{tip:.2f}", color=COLORS["snack"], position="top right"
+                tip_label_x,
+                tip + 0.5,
+                f"{tip:.2f}",
+                color=label_color,
+                position="middle left",
             )
         )
     return traces, y_max
 
 
 def _aggregate_traces(action_values, chosen):
-    """Snack/resist aggregates at t=0; chosen action is fully opaque and bold."""
+    """Snack/resist aggregates at t=0; chosen action's value numeral is bold."""
     snack_agg = action_values["snack"]
     resist_agg = action_values["resist"]
     label_x = -LABEL_AGG_OFFSET
 
-    def agg_marker(name, y, fill, edge, is_chosen):
-        size = 16 if is_chosen else 11
-        # Chosen: solid full hue, thick border; other: lighter fill
+    def agg_marker(name, y, color):
         return {
             "type": "scatter",
             "mode": "markers",
             "x": [0],
             "y": [y],
             "marker": {
-                "size": size,
-                "color": edge if is_chosen else fill,
+                "size": 12,
+                "color": color,
                 "opacity": 1.0,
-                "line": {"color": edge, "width": 2.5 if is_chosen else 1.0},
+                "line": {"color": color, "width": 1.2},
             },
-            "name": f"{name} aggregate" + (" ★" if is_chosen else ""),
+            "name": f"{name} aggregate",
             "hovertemplate": f"{name} agg=%{{y:.3f}}<extra></extra>",
         }
 
-    def agg_label(y, fill, edge, is_chosen):
-        return _value_label(
+    def agg_label(y, color, is_chosen):
+        lab = _value_label(
             label_x,
-            y,
+            y + 0.5,
             f"{y:.2f}",
-            color=edge if is_chosen else fill,
+            color=color,
             position="middle left",
+            size=13,
         )
-
-    snack_chosen = chosen == "snack"
-    resist_chosen = chosen == "resist"
-    # Chosen label slightly bolder via larger font
-    snack_lab = agg_label(
-        snack_agg, COLORS["snack_agg"], COLORS["snack"], snack_chosen
-    )
-    resist_lab = agg_label(
-        resist_agg, COLORS["resist_agg"], COLORS["resist"], resist_chosen
-    )
-    if snack_chosen:
-        snack_lab["textfont"] = {
-            "color": COLORS["snack"],
-            "size": 14,
-            "family": "Arial Black, Helvetica Neue, sans-serif",
-        }
-    if resist_chosen:
-        resist_lab["textfont"] = {
-            "color": COLORS["resist"],
-            "size": 14,
-            "family": "Arial Black, Helvetica Neue, sans-serif",
-        }
+        if is_chosen:
+            lab["textfont"] = {
+                "color": color,
+                "size": 15,
+                "family": "Arial Black, Helvetica Neue, sans-serif",
+            }
+        return lab
 
     traces = [
-        agg_marker(
-            "snack", snack_agg, COLORS["snack_agg"], COLORS["snack"], snack_chosen
-        ),
-        snack_lab,
-        agg_marker(
-            "resist", resist_agg, COLORS["resist_agg"], COLORS["resist"], resist_chosen
-        ),
-        resist_lab,
+        agg_marker("snack", snack_agg, COLORS["snack"]),
+        agg_label(snack_agg, COLORS["snack"], chosen == "snack"),
+        agg_marker("resist", resist_agg, COLORS["resist"]),
+        agg_label(resist_agg, COLORS["resist"], chosen == "resist"),
     ]
     return traces, max(snack_agg, resist_agg)
 
 
-def _day_xticks(x_max):
+def _hour_xticks(x_max):
     ticks = list(range(0, x_max + 1, 12))
-    labels = [str(t // 24 + 1) if t % 24 == 0 else "" for t in ticks]
+    labels = [str(t) for t in ticks]
     return ticks, labels
 
 
@@ -293,7 +324,7 @@ def sails_frame(agent, environment, state, *, day=None):
         shapes.extend(sail_shapes)
         y_max = max(y_max, peak)
 
-    ss_traces, ss_ymax = _ss_point_traces(agent, ss_events)
+    ss_traces, ss_ymax = _ss_sail_traces(agent, ss_events)
     traces.extend(ss_traces)
     y_max = max(y_max, ss_ymax)
 
@@ -307,7 +338,7 @@ def sails_frame(agent, environment, state, *, day=None):
     )
     # Extra left room for aggregate labels (furthest left numerals)
     pad_x = max(LABEL_AGG_OFFSET + 6, x_max * 0.12)
-    xticks, xticklabels = _day_xticks(x_max)
+    xticks, xticklabels = _hour_xticks(x_max)
 
     if day is not None:
         title = _choice_title(
@@ -324,7 +355,7 @@ def sails_frame(agent, environment, state, *, day=None):
         "layout": {
             "title": title,
             "xaxis": {
-                "title": "Day",
+                "title": "Hours from now",
                 "range": [-pad_x, x_max + pad_x],
                 "tickvals": xticks,
                 "ticktext": xticklabels,
@@ -625,10 +656,14 @@ def sticky_curves(agent, environment, state, delay_max, delay_step, reward_LL=No
     horizon = agent.get_horizon(state, environment)
     decision_interval = environment.decision_interval
     delay_SS = environment.rewards["SS"]["delay"]
+    current_delay_LL = int(environment.rewards["LL"]["delay"])
     if reward_LL is None:
         reward_LL = environment.rewards["LL"]["value"]
 
     delays = delay_list(delay_max, delay_step)
+    # Ensure the configured LL delay is present so it can be highlighted
+    if current_delay_LL not in delays:
+        delays = sorted(delays + [current_delay_LL])
     xs = stickiness_axis()
     curves = []
     for d in delays:
@@ -652,33 +687,46 @@ def sticky_curves(agent, environment, state, delay_max, delay_step, reward_LL=No
 
     delay_lo = min(delays) if delays else 0
     delay_hi = max(delays) if delays else 1
-    traces = [
-        {
-            "type": "scatter",
-            "mode": "lines",
-            "x": xs,
-            "y": c["max_ss"],
-            "line": {
-                "width": 2.5,
-                "color": sticky_delay_rgba(c["delay_LL"], delay_lo, delay_hi),
-            },
-            "name": f"LL delay = {c['delay_LL']}h",
-            "hovertemplate": "s=%{x:.2f}<br>max SS=%{y:.3f}<extra></extra>",
-        }
-        for c in curves
-    ]
+    traces = []
+    for c in curves:
+        is_current = c["delay_LL"] == current_delay_LL
+        traces.append(
+            {
+                "type": "scatter",
+                "mode": "lines",
+                "x": xs,
+                "y": c["max_ss"],
+                "line": {
+                    "width": 3.2 if is_current else 2.5,
+                    "color": (
+                        "#000000"
+                        if is_current
+                        else sticky_delay_rgba(c["delay_LL"], delay_lo, delay_hi)
+                    ),
+                },
+                "name": (
+                    f"LL delay = {c['delay_LL']}h (current)"
+                    if is_current
+                    else f"LL delay = {c['delay_LL']}h"
+                ),
+                "hovertemplate": "s=%{x:.2f}<br>max SS=%{y:.3f}<extra></extra>",
+            }
+        )
 
     return {
         "kind": "sticky",
         "traces": traces,
         "layout": {
             "title": (
-                f"Max SS resisted | LL={reward_LL}, horizon={horizon}, "
-                f"discount_factor={agent.discount_factor}"
+                f"Max SS resisted | LL={reward_LL}, current delay={current_delay_LL}h, "
+                f"horizon={horizon}, discount_factor={agent.discount_factor}"
             ),
             "xaxis": {
                 "title": "Stickiness s",
                 "range": [0, 1],
+                "autorange": False,
+                # Lock s ∈ [0, 1]: pan/zoom can still move y, but not past stickiness bounds
+                "fixedrange": True,
             },
             "yaxis": {
                 "title": "Max SS resisted",
@@ -691,6 +739,7 @@ def sticky_curves(agent, environment, state, delay_max, delay_step, reward_LL=No
         "meta": {
             "stickiness": xs,
             "delays": delays,
+            "current_delay_LL": current_delay_LL,
             "reward_LL": reward_LL,
             "horizon": horizon,
             "discount_factor": agent.discount_factor,

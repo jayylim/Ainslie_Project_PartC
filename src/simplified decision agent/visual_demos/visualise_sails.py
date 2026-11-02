@@ -1,5 +1,5 @@
 '''
-One sail per foreseeable LL, one scatter per foreseeable SS.
+One sail per foreseeable LL, one sail (or tip scatter) per foreseeable SS.
 
 Each reward is discounted from the current decision, then
 those values are summed (see agents.hyperbolic.HypAgent.aggregate_value).
@@ -7,11 +7,12 @@ those values are summed (see agents.hyperbolic.HypAgent.aggregate_value).
 At day 1 the agent plans {horizon} steps ahead. For each future SS / LL:
 
   1. Discount that single reward with its delay from now
-  2. LL as a sail y(t) = V(reward, delay - t) from t=0; SS as a scatter at the tip
+  2. Sail y(t) = V(reward, delay - t) from t=0 to delivery;
+     the current SS (delay 0) is tip-only
 
 Black dotted lines mark decision nodes (when that LL's SS is offered).
-Lighter scatters at t=0 show the bundled snack / resist aggregates
-(same as HypAgent.evaluate_action / aggregate_value).
+Opaque scatters at t=0 show the bundled snack / resist aggregates
+(same as HypAgent.evaluate_action / aggregate_value); option sails are lighter.
 
 Run from the package root:
 
@@ -39,8 +40,9 @@ from main import agent_params, env_params
 COLORS = {
     "snack": "#c44e52",
     "resist": "#4c72b0",
-    "snack_agg": "#e89a9e", #aggregate colours are lighter versions of the individual colours
-    "resist_agg": "#8fb0d9",
+    # Lighter tint for option sails; aggregates use the opaque snack / resist colours
+    "snack_sail": "#e89a9e",
+    "resist_sail": "#8fb0d9",
 }
 
 
@@ -89,14 +91,35 @@ def plot_ll_sail(axes, agent, delay, reward, decision_t, color, *, label=None):
     return max(ys) if ys else 0
 
 
-def plot_ss_points(axes, agent, ss_events, color):
-    """One scatter per foreseeable SS tip (full reward at delivery)."""
+def plot_ss_sails(axes, agent, ss_events, color):
+    """SS at the current decision is a tip scatter; later SS get sails back to t=0."""
     y_max = 0
     for i, (delay, reward) in enumerate(ss_events):
-        tip = agent.value_function(reward, 0)
-        y_max = max(y_max, tip)
         label = "snack" if i == 0 else None
-        axes.scatter(delay, tip, s=55, color=color, zorder=6, label=label)
+        if delay == 0:
+            tip = agent.value_function(reward, 0)
+            y_max = max(y_max, tip)
+            axes.scatter(delay, tip, s=55, color=color, zorder=6, label=label)
+            axes.text(
+                delay,
+                tip,
+                f"  {tip:.2f}",
+                color=color,
+                va="bottom",
+                ha="left",
+                size=11,
+            )
+            continue
+
+        xs, ys = [], []
+        for t in range(0, delay + 1):
+            xs.append(t)
+            ys.append(agent.value_function(reward, delay - t))
+
+        axes.plot(xs, ys, color=color, label=label)
+        tip = ys[-1]
+        y_max = max(y_max, max(ys) if ys else 0)
+        axes.scatter(delay, tip, s=55, color=color, zorder=6)
         axes.text(
             delay,
             tip,
@@ -109,7 +132,7 @@ def plot_ss_points(axes, agent, ss_events, color):
     return y_max
 
 
-def plot_aggregates(axes, action_values):
+def plot_aggregates(axes, action_values, chosen):
     """Bundled snack / resist values at the current decision (t=0)."""
     snack_agg = action_values["snack"]
     resist_agg = action_values["resist"]
@@ -118,7 +141,7 @@ def plot_aggregates(axes, action_values):
         0,
         snack_agg,
         s=70,
-        color=COLORS["snack_agg"],
+        color=COLORS["snack"],
         zorder=7,
         edgecolors=COLORS["snack"],
         linewidths=1.2,
@@ -126,19 +149,20 @@ def plot_aggregates(axes, action_values):
     )
     axes.text(
         -2,
-        snack_agg+1,
+        snack_agg + 1,
         f"{snack_agg:.2f}",
-        color=COLORS["snack_agg"],
+        color=COLORS["snack"],
         va="bottom",
         ha="right",
         size=11,
+        fontweight="bold" if chosen == "snack" else "normal",
     )
 
     axes.scatter(
         0,
         resist_agg,
         s=70,
-        color=COLORS["resist_agg"],
+        color=COLORS["resist"],
         zorder=7,
         edgecolors=COLORS["resist"],
         linewidths=1.2,
@@ -148,10 +172,11 @@ def plot_aggregates(axes, action_values):
         -2,
         resist_agg,
         f"{resist_agg:.2f}",
-        color=COLORS["resist_agg"],
+        color=COLORS["resist"],
         va="bottom",
         ha="right",
         size=11,
+        fontweight="bold" if chosen == "resist" else "normal",
     )
 
     return max(snack_agg, resist_agg)
@@ -180,14 +205,14 @@ def main():
             delay,
             reward,
             decision_t,
-            COLORS["resist"],
+            COLORS["resist_sail"],
             label="resist" if i == 0 else None,
         )
         y_max = max(y_max, peak)
 
     # ensure y_max is actually the highest point of the graph
-    y_max = max(y_max, plot_ss_points(axes, agent, ss_events, COLORS["snack"]))
-    y_max = max(y_max, plot_aggregates(axes, action_values))
+    y_max = max(y_max, plot_ss_sails(axes, agent, ss_events, COLORS["snack_sail"]))
+    y_max = max(y_max, plot_aggregates(axes, action_values, action))
 
     # ensure x_max is actually the longest delay; its normally from LL-events anyway
     x_max = max(
@@ -201,8 +226,8 @@ def main():
 
     xticks = list(range(0, x_max + 1, 12))
     axes.set_xticks(xticks)
-    axes.set_xticklabels([str(t // 24 + 1) if t % 24 == 0 else "" for t in xticks])
-    axes.set_xlabel("Day")
+    axes.set_xticklabels([str(t) for t in xticks])
+    axes.set_xlabel("Hours from now")
     axes.set_ylabel("Perceived value")
     axes.set_title(f"Choice sails with a horizon of {n} days  |  Agent would choose {action}")
     axes.legend(loc="upper right")
