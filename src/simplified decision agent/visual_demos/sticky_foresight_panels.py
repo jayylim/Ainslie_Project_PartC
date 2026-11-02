@@ -18,7 +18,8 @@ Figure layout (one window, two panels):
             top segment    = (1-stick_p_t) * V_hyp(b, t)
             bar height     = EV_t(a)
           Two bars per hour (snack-first | resist-first).
-          Side totals show V(a) = sum_t EV_t(a).
+          Side Σ bars are sectioned by each foresight EV_t and labeled
+          with hours + contribution; totals are V(a) = sum_t EV_t(a).
 '''
 
 import matplotlib.pyplot as plt
@@ -176,37 +177,86 @@ def plot_ev_stacked_bars(axes, rows, action_values, chosen):
         label=r"resist-first: $(1-p_t)\,V_{hyp}(snack)$",
     )
 
-    # Aggregate totals as reference bars to the right of the last group
+    # Aggregate Σ bars: sectioned by each foresight day's EV_t contribution
     total_x0 = hours[-1] + group_gap * 1.35
-    v_snack = action_values["snack"]
-    v_resist = action_values["resist"]
-    axes.bar(
-        total_x0 - offset,
-        v_snack,
-        width=bar_w,
-        color=COLORS["snack"],
-        alpha=0.85,
-        edgecolor="black",
-        linewidth=1.2 if chosen == "snack" else 0.6,
-        label=r"aggregate $V(snack)=\sum EV_t$",
-    )
-    axes.bar(
-        total_x0 + offset,
-        v_resist,
-        width=bar_w,
-        color=COLORS["resist"],
-        alpha=0.85,
-        edgecolor="black",
-        linewidth=1.2 if chosen == "resist" else 0.6,
-        label=r"aggregate $V(resist)=\sum EV_t$",
-    )
+    x_sum_snack = total_x0 - offset
+    x_sum_resist = total_x0 + offset
+    ev_snack = np.array([r["ev_snack"] for r in rows])
+    ev_resist = np.array([r["ev_resist"] for r in rows])
+    v_snack = float(np.sum(ev_snack))
+    v_resist = float(np.sum(ev_resist))
+    # Prefer agent aggregates when provided (should match)
+    if action_values is not None:
+        v_snack = action_values["snack"]
+        v_resist = action_values["resist"]
+
+    snack_cmap = plt.cm.Reds
+    resist_cmap = plt.cm.Blues
+    # Map foresight index → shade (early days darker / more saturated)
+    def _shade(cmap, i, n_seg):
+        # avoid ultra-light / white end of colormap
+        return cmap(0.35 + 0.55 * (i / max(n_seg - 1, 1)))
+
+    bottom_s = 0.0
+    bottom_r = 0.0
+    min_label = 0.12 * max(v_snack, v_resist, 1e-9)  # skip tiny segment labels
+    for i, r in enumerate(rows):
+        h_s = ev_snack[i]
+        h_r = ev_resist[i]
+        edge_s = 1.2 if chosen == "snack" else 0.5
+        edge_r = 1.2 if chosen == "resist" else 0.5
+        axes.bar(
+            x_sum_snack,
+            h_s,
+            width=bar_w * 1.15,
+            bottom=bottom_s,
+            color=_shade(snack_cmap, i, n),
+            edgecolor="black",
+            linewidth=edge_s,
+            label=r"$\sum EV_t$ snack (by hour)" if i == 0 else None,
+        )
+        axes.bar(
+            x_sum_resist,
+            h_r,
+            width=bar_w * 1.15,
+            bottom=bottom_r,
+            color=_shade(resist_cmap, i, n),
+            edgecolor="black",
+            linewidth=edge_r,
+            label=r"$\sum EV_t$ resist (by hour)" if i == 0 else None,
+        )
+        # Label each section by foresight hour + contribution
+        if h_s >= min_label:
+            axes.text(
+                x_sum_snack,
+                bottom_s + h_s / 2,
+                f"{int(r['hours'])}h\n{h_s:.2f}",
+                ha="center",
+                va="center",
+                fontsize=7,
+                color="white" if i < n * 0.6 else "#333333",
+            )
+        if h_r >= min_label:
+            axes.text(
+                x_sum_resist,
+                bottom_r + h_r / 2,
+                f"{int(r['hours'])}h\n{h_r:.2f}",
+                ha="center",
+                va="center",
+                fontsize=7,
+                color="white" if i < n * 0.6 else "#333333",
+            )
+        bottom_s += h_s
+        bottom_r += h_r
+
     axes.text(
         total_x0,
         max(v_snack, v_resist) * 1.04,
-        "sums → today",
+        f"Σ snack={v_snack:.2f}  |  Σ resist={v_resist:.2f}",
         ha="center",
         va="bottom",
         fontsize=9,
+        fontweight="bold",
     )
 
     axes.set_xticks(list(hours) + [total_x0])
@@ -215,9 +265,9 @@ def plot_ev_stacked_bars(axes, rows, action_values, chosen):
     axes.set_ylabel("Value contribution (from now)")
     axes.set_title(
         "Stacked day contributions\n"
-        r"bar height $=EV_t$; opaque totals $=V(a)=\sum_t EV_t$"
+        r"hourly bars $=EV_t$; Σ bars sectioned by each $EV_t$ → $V(a)$"
     )
-    axes.legend(loc="upper right", fontsize=7)
+    axes.legend(loc="upper left", fontsize=7)
     axes.grid(True, axis="y", alpha=0.25)
 
 
