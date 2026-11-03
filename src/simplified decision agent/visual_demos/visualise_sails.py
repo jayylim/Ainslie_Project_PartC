@@ -65,7 +65,18 @@ def foreseeable_events(agent, environment, state):
     )
 
 
-def plot_ll_sail(axes, agent, delay, reward, decision_t, color, *, label_base, label=None):
+def plot_ll_sail(
+    axes,
+    agent,
+    delay,
+    reward,
+    decision_t,
+    color,
+    *,
+    label_base,
+    label=None,
+    show_labels=True,
+):
     """Hyperbolic sail for one LL: full curve from t=0 to delivery."""
     xs, ys = [], []
     for t in range(0, delay + 1):
@@ -78,53 +89,57 @@ def plot_ll_sail(axes, agent, delay, reward, decision_t, color, *, label_base, l
 
     tip = ys[-1]
     axes.scatter(delay, tip, s=50, color=color, zorder=5)
-    axes.text(delay, tip, f"  {tip:.2f}", color=label_base, va="bottom", ha="left", size=11)
+    if show_labels:
+        axes.text(delay, tip, f"  {tip:.2f}", color=label_base, va="bottom", ha="left", size=11)
 
     # Value at this sail's decision node (remaining delay from that choice)
-
-      ### maybe change to t=0 value (but looks ugly on graph cus too overcrowded) 
-
     decision_val = agent.value_function(reward, delay - decision_t)
     axes.scatter(decision_t, decision_val, s=40, color=color, zorder=5)
-    ha = "right" if decision_t == 0 else "left"
-    prefix = "" if ha == "right" else "  "
-    offset = -1 if ha == "right" else 0
-    axes.text(
-        decision_t + offset,
-        decision_val,
-        f"{prefix}{decision_val:.2f}",
-        color=label_base,
-        va="bottom",
-        ha=ha,
-        size=11,
-    )
+    if show_labels:
+        ha = "right" if decision_t == 0 else "left"
+        prefix = "" if ha == "right" else "  "
+        offset = -1 if ha == "right" else 0
+        axes.text(
+            decision_t + offset,
+            decision_val,
+            f"{prefix}{decision_val:.2f}",
+            color=label_base,
+            va="bottom",
+            ha=ha,
+            size=11,
+        )
 
     return max(ys) if ys else 0
 
 
-def plot_ss_sails(axes, agent, ss_events, base_color):
+def plot_ss_sails(axes, agent, ss_events, base_color, *, label_cutoff=None):
     """SS at the current decision is a tip scatter; later SS get sails back to t=0.
 
     Sail colour fades with foresight index; data labels stay fully opaque.
+    Numeric tip labels only for indices before label_cutoff (None = all).
     """
     y_max = 0
     n = len(ss_events)
+    if label_cutoff is None:
+        label_cutoff = n
     for i, (delay, reward) in enumerate(ss_events):
         color = fade(base_color, i, n)
         label = "snack" if i == 0 else None
+        show_labels = i < label_cutoff
         if delay == 0:
             tip = agent.value_function(reward, 0)
             y_max = max(y_max, tip)
             axes.scatter(delay, tip, s=55, color=color, zorder=6, label=label)
-            axes.text(
-                delay,
-                tip,
-                f"  {tip:.2f}",
-                color=base_color,
-                va="bottom",
-                ha="left",
-                size=11,
-            )
+            if show_labels:
+                axes.text(
+                    delay,
+                    tip,
+                    f"  {tip:.2f}",
+                    color=base_color,
+                    va="bottom",
+                    ha="left",
+                    size=11,
+                )
             continue
 
         xs, ys = [], []
@@ -136,15 +151,16 @@ def plot_ss_sails(axes, agent, ss_events, base_color):
         tip = ys[-1]
         y_max = max(y_max, max(ys) if ys else 0)
         axes.scatter(delay, tip, s=55, color=color, zorder=6)
-        axes.text(
-            delay,
-            tip,
-            f"  {tip:.2f}",
-            color=base_color,
-            va="bottom",
-            ha="left",
-            size=11,
-        )
+        if show_labels:
+            axes.text(
+                delay,
+                tip,
+                f"  {tip:.2f}",
+                color=base_color,
+                va="bottom",
+                ha="left",
+                size=11,
+            )
     return y_max
 
 
@@ -197,6 +213,7 @@ def plot_aggregates(axes, action_values, chosen):
 
     return max(snack_agg, resist_agg)
 
+#plotting some cumulative bar graph
 
 def plot_aggregate_stack(axes, agent, ss_events, ll_events, action_values, chosen):
     """Σ bars only: each segment is that foresight day's V_hyp.
@@ -360,6 +377,8 @@ def main():
     y_max = 0
 
     n_sails = len(ll_events)
+    # Numeric labels (decision nodes + peaks) only for the first half of foresight days
+    label_cutoff = n_sails / 2
     for i, (delay, reward) in enumerate(ll_events):
         # SS offer / decision node for this step (same index in the plan)
         decision_t = ss_events[i][0]
@@ -373,11 +392,17 @@ def main():
             sail_color,
             label_base=COLORS["resist_sail"],
             label="resist" if i == 0 else None,
+            show_labels=i < label_cutoff,
         )
         y_max = max(y_max, peak)
 
     # ensure y_max is actually the highest point of the graph
-    y_max = max(y_max, plot_ss_sails(axes, agent, ss_events, COLORS["snack_sail"]))
+    y_max = max(
+        y_max,
+        plot_ss_sails(
+            axes, agent, ss_events, COLORS["snack_sail"], label_cutoff=label_cutoff
+        ),
+    )
     y_max = max(y_max, plot_aggregates(axes, action_values, action))
 
     # ensure x_max is actually the longest delay; its normally from LL-events anyway
