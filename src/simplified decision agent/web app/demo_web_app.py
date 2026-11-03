@@ -393,7 +393,7 @@ PAGE = r"""
     min-height: 100vh;
   }
   .wrap {
-    max-width: 1100px;
+    max-width: min(1680px, 90vw);
     margin: 0 auto;
     padding: 1.25rem 1.25rem 2.5rem;
   }

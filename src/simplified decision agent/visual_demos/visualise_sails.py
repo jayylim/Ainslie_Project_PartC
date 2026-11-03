@@ -15,6 +15,9 @@ Opaque scatters at t=0 show the bundled snack / resist aggregates
 (same as HypAgent.evaluate_action / aggregate_value). Later foresight sails
 fade toward white; data labels stay fully opaque.
 
+A side panel stacks each day's V_hyp contribution so the opaque aggregate
+dots are visibly V(a) = sum_t V_hyp(a, t) under pure commitment.
+
 Run from the package root:
 
     python -m visual_demos.visualise_sails
@@ -195,6 +198,146 @@ def plot_aggregates(axes, action_values, chosen):
     return max(snack_agg, resist_agg)
 
 
+def plot_aggregate_stack(axes, agent, ss_events, ll_events, action_values, chosen):
+    """Σ bars only: each segment is that foresight day's V_hyp.
+
+    Pure commitment (HypAgent): no stickiness mix. 
+    """
+    n = len(ll_events)
+    if n == 0:
+        return
+
+    # One contribution per foresight day (delay, reward) → V from now
+    snack_parts = [
+        (delay, agent.value_function(reward, delay)) for delay, reward in ss_events
+    ]
+    resist_parts = [
+        (delay, agent.value_function(reward, delay)) for delay, reward in ll_events
+    ]
+    snack_agg = action_values["snack"]
+    resist_agg = action_values["resist"]
+
+    snack_cmap = plt.cm.Reds
+    resist_cmap = plt.cm.Blues
+
+    def fade_cmap(cmap, i, n_seg):
+        t = i / (n_seg - 1) if n_seg > 1 else 0.0
+        return cmap(0.88 - 0.56 * t)
+
+    x_snack, x_resist = 0.0, 1.0
+    bar_w = 0.55
+    bottom_s = 0.0
+    bottom_r = 0.0
+    min_label = 0.05 * max(reward for _, reward in ss_events)
+    # (hours, height, segment mid-y) for side callouts
+    snack_callouts = []
+    resist_callouts = []
+
+    for i in range(n):
+        hours_s, h_s = snack_parts[i]
+        hours_r, h_r = resist_parts[i]
+        edge_s = 1.2 if chosen == "snack" else 0.5
+        edge_r = 1.2 if chosen == "resist" else 0.5
+
+        axes.bar(
+            x_snack,
+            h_s,
+            width=bar_w,
+            bottom=bottom_s,
+            color=fade_cmap(snack_cmap, i, n),
+            edgecolor="black",
+            linewidth=edge_s,
+        )
+        axes.bar(
+            x_resist,
+            h_r,
+            width=bar_w,
+            bottom=bottom_r,
+            color=fade_cmap(resist_cmap, i, n),
+            edgecolor="black",
+            linewidth=edge_r,
+        )
+        if h_s >= min_label:
+            snack_callouts.append((hours_s, h_s, bottom_s + h_s / 2))
+        if h_r >= min_label:
+            resist_callouts.append((hours_r, h_r, bottom_r + h_r / 2))
+        bottom_s += h_s
+        bottom_r += h_r
+
+    y_peak = max(snack_agg, resist_agg) or 1.0
+
+    def spaced_ys(count, lo, hi):
+        if count <= 0:
+            return []
+        if count == 1:
+            return [(lo + hi) / 2]
+        return [lo + (hi - lo) * i / (count - 1) for i in range(count)]
+
+    # data point labels as callouts
+    def draw_callouts(callouts, x_bar, x_text, ha):
+        """Evenly spaced side labels with arrows into each stack segment."""
+        ys = spaced_ys(len(callouts), y_peak * 0.06, y_peak * 0.94)
+        x_edge = x_bar - bar_w / 2 if ha == "right" else x_bar + bar_w / 2
+        for (hours, h, mid_y), y_lab in zip(callouts, ys):
+            axes.annotate(
+                f"{int(hours)}h\n{h:.2f}", # reward delay in hours
+                xy=(x_edge, mid_y),
+                xytext=(x_text, y_lab),
+                ha=ha,
+                va="center",
+                fontsize=7,
+                color="#4c72b0" if ha == "left" else "#c44e52", # right and left are substitute for resist and snack respectively
+                arrowprops={
+                    "arrowstyle": "->",
+                    "color": "#666666",
+                    "lw": 0.8,
+                    "shrinkA": 0,
+                    "shrinkB": 2,
+                },
+                zorder=8,
+            )
+
+    draw_callouts(snack_callouts, x_snack, x_snack - 0.85, "right")
+    draw_callouts(resist_callouts, x_resist, x_resist + 0.85, "left")
+
+
+    axes.text(
+        x_snack - 0.75,
+        y_peak * 1.04,
+        f"Σ snack = {snack_agg:.2f}",
+        ha="left",
+        va="bottom",
+        fontsize=9,
+        fontweight="bold",
+        color=COLORS["snack"],
+    )
+
+    axes.text(
+        x_resist + 0.75,
+        y_peak * 1.04,
+        f"Σ resist = {resist_agg:.2f}",
+        ha="right",
+        va="bottom",
+        fontsize=9,
+        fontweight="bold",
+        color=COLORS["resist"],
+    )
+
+    axes.set_xticks([x_snack, x_resist])
+    axes.set_xticklabels(["snack", "resist"])
+    axes.set_xlim(-1.25, 2.25)
+    axes.set_ylim(0, y_peak * 1.18)
+    axes.set_ylabel("Contribution from now")
+    axes.set_title(
+        r"Summation of discounted values"
+        "\n"
+        "(Aggregate option values)"
+    )
+    
+    # axes.legend(loc="upper right", fontsize=7) # removed legend for now
+    axes.grid(True, axis="y", alpha=0.25)
+
+
 def main():
     environment = TimelineEnvironment(**env_params)
     agent = HypAgent(**agent_params)
@@ -206,7 +349,14 @@ def main():
     # obtain current choice
     action, action_values = agent.choose_action(state, environment)
 
-    fig, axes = plt.subplots(figsize=(10, 5))
+    fig, (ax_stack, axes) = plt.subplots(
+        1, 2, figsize=(13, 5), gridspec_kw={"width_ratios": [1, 3]}
+    )
+
+    plot_aggregate_stack(
+        ax_stack, agent, ss_events, ll_events, action_values, action
+    )
+
     y_max = 0
 
     n_sails = len(ll_events)
@@ -247,6 +397,7 @@ def main():
     axes.set_ylabel("Perceived value")
     axes.set_title(f"Choice sails with a horizon of {n} days  |  Agent would choose {action}")
     axes.legend(loc="upper right")
+
 
     # Day-1 perceived value of each outcome (same terms as aggregate_value)
     print(f"Horizon = {n}")

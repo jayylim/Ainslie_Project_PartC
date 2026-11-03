@@ -37,7 +37,7 @@ agent_kind = "hyperbolic"
 agent_params = {
     "discount_factor": 0.6,
     "vision": "long",  # "short" or "long"
-    "horizon": 10,  # max # of decisions to plan; capped by remaining env decisions, includes the current day (min. 1)
+    "horizon": 20,  # max # of decisions to plan; capped by remaining env decisions, includes the current day (min. 1)
 }
 
 # used by StickyHypAgent only; s=1 matches HypAgent long vision

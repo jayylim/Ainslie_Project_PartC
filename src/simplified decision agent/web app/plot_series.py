@@ -317,23 +317,204 @@ def _hour_xticks(x_max):
     return ticks, labels
 
 
+def _assign_axes(traces, *, xaxis="x", yaxis="y"):
+    for tr in traces:
+        tr["xaxis"] = xaxis
+        tr["yaxis"] = yaxis
+    return traces
+
+
+def _shapes_on_subplot(shapes, *, xref="x2", yref="y2"):
+    """Point sail shapes at the right-hand subplot (paper → subplot domain)."""
+    out = []
+    for shape in shapes:
+        s = dict(shape)
+        s["xref"] = xref
+        if s.get("yref") == "paper":
+            s["yref"] = f"{yref} domain"
+        else:
+            s["yref"] = yref
+        out.append(s)
+    return out
+
+
+def _spaced_ys(count, lo, hi):
+    if count <= 0:
+        return []
+    if count == 1:
+        return [(lo + hi) / 2]
+    return [lo + (hi - lo) * i / (count - 1) for i in range(count)]
+
+
+def _aggregate_stack_panel(agent, ss_events, ll_events, action_values, chosen):
+    """Left-panel Σ bars matching visualise_sails.plot_aggregate_stack.
+
+    Returns (traces, annotations, y_peak). Bars use manual `base` stacking;
+    callouts are Plotly annotations with arrows into each segment.
+    """
+    n = len(ll_events)
+    if n == 0:
+        return [], [], 1.0
+
+    snack_parts = [
+        (delay, agent.value_function(reward, delay)) for delay, reward in ss_events
+    ]
+    resist_parts = [
+        (delay, agent.value_function(reward, delay)) for delay, reward in ll_events
+    ]
+    snack_agg = action_values["snack"]
+    resist_agg = action_values["resist"]
+
+    x_snack, x_resist = 0.0, 1.0
+    bar_w = 0.55
+    bottom_s = 0.0
+    bottom_r = 0.0
+    ss_rewards = [reward for _, reward in ss_events]
+    min_label = 0.05 * max(ss_rewards) if ss_rewards else 0.0
+
+    traces = []
+    snack_callouts = []
+    resist_callouts = []
+
+    for i in range(n):
+        hours_s, h_s = snack_parts[i]
+        hours_r, h_r = resist_parts[i]
+        edge_s = 1.2 if chosen == "snack" else 0.5
+        edge_r = 1.2 if chosen == "resist" else 0.5
+        color_s = fade(COLORS["snack_sail"], i, n)
+        color_r = fade(COLORS["resist_sail"], i, n)
+
+        traces.append(
+            {
+                "type": "bar",
+                "x": [x_snack],
+                "y": [h_s],
+                "base": [bottom_s],
+                "width": [bar_w],
+                "marker": {
+                    "color": color_s,
+                    "line": {"color": "black", "width": edge_s},
+                },
+                "showlegend": False,
+                "hovertemplate": (
+                    f"snack @ {int(hours_s)}h<br>V=%{{y:.3f}}<extra></extra>"
+                ),
+            }
+        )
+        traces.append(
+            {
+                "type": "bar",
+                "x": [x_resist],
+                "y": [h_r],
+                "base": [bottom_r],
+                "width": [bar_w],
+                "marker": {
+                    "color": color_r,
+                    "line": {"color": "black", "width": edge_r},
+                },
+                "showlegend": False,
+                "hovertemplate": (
+                    f"resist @ {int(hours_r)}h<br>V=%{{y:.3f}}<extra></extra>"
+                ),
+            }
+        )
+        if h_s >= min_label:
+            snack_callouts.append((hours_s, h_s, bottom_s + h_s / 2))
+        if h_r >= min_label:
+            resist_callouts.append((hours_r, h_r, bottom_r + h_r / 2))
+        bottom_s += h_s
+        bottom_r += h_r
+
+    y_peak = max(snack_agg, resist_agg) or 1.0
+    annotations = []
+
+    def callout_annotations(callouts, x_bar, x_text, *, color, xanchor):
+        ys = _spaced_ys(len(callouts), y_peak * 0.06, y_peak * 0.94)
+        x_edge = x_bar - bar_w / 2 if xanchor == "right" else x_bar + bar_w / 2
+        for (hours, h, mid_y), y_lab in zip(callouts, ys):
+            annotations.append(
+                {
+                    "x": x_edge,
+                    "y": mid_y,
+                    "ax": x_text,
+                    "ay": y_lab,
+                    "xref": "x",
+                    "yref": "y",
+                    "axref": "x",
+                    "ayref": "y",
+                    "text": f"{int(hours)}h<br>{h:.2f}",
+                    "showarrow": True,
+                    "arrowhead": 2,
+                    "arrowsize": 0.9,
+                    "arrowwidth": 1,
+                    "arrowcolor": "#666666",
+                    "font": {"size": 10, "color": color},
+                    "xanchor": xanchor,
+                    "align": xanchor,
+                    "bgcolor": "rgba(255,255,255,0.65)",
+                    "borderpad": 2,
+                }
+            )
+
+    callout_annotations(
+        snack_callouts, x_snack, x_snack - 0.85, color=COLORS["snack"], xanchor="right"
+    )
+    callout_annotations(
+        resist_callouts, x_resist, x_resist + 0.85, color=COLORS["resist"], xanchor="left"
+    )
+
+    annotations.extend(
+        [
+            {
+                "x": x_snack - 0.75,
+                "y": y_peak * 1.04,
+                "xref": "x",
+                "yref": "y",
+                "text": f"<b>Σ snack = {snack_agg:.2f}</b>",
+                "showarrow": False,
+                "font": {"size": 12, "color": COLORS["snack"]},
+                "xanchor": "left",
+                "yanchor": "bottom",
+            },
+            {
+                "x": x_resist + 0.75,
+                "y": y_peak * 1.04,
+                "xref": "x",
+                "yref": "y",
+                "text": f"<b>Σ resist = {resist_agg:.2f}</b>",
+                "showarrow": False,
+                "font": {"size": 12, "color": COLORS["resist"]},
+                "xanchor": "right",
+                "yanchor": "bottom",
+            },
+        ]
+    )
+
+    _assign_axes(traces, xaxis="x", yaxis="y")
+    return traces, annotations, y_peak
+
+
 def sails_frame(agent, environment, state, *, day=None):
     """
-    Same geometry as visualise_sails / visualizing_main.draw_frame.
+    Dual panel matching visualise_sails: aggregate stack (left) + sails (right).
     If day is set, title includes the day number (steppable mode).
     """
     ss_events, ll_events = foreseeable_events(agent, environment, state)
     n = len(ll_events)
     action, action_values = agent.choose_action(state, environment)
 
-    traces = []
+    stack_traces, stack_annotations, stack_ymax = _aggregate_stack_panel(
+        agent, ss_events, ll_events, action_values, action
+    )
+
+    sail_traces = []
     shapes = []
     y_max = 0
 
     n_sails = len(ll_events)
     for i, (delay, reward) in enumerate(ll_events):
         decision_t = ss_events[i][0]
-        sail_traces, sail_shapes, peak = _ll_sail_trace(
+        traces_i, shapes_i, peak = _ll_sail_trace(
             agent,
             delay,
             reward,
@@ -342,17 +523,20 @@ def sails_frame(agent, environment, state, *, day=None):
             label="resist" if i == 0 else None,
             show_legend=(i == 0),
         )
-        traces.extend(sail_traces)
-        shapes.extend(sail_shapes)
+        sail_traces.extend(traces_i)
+        shapes.extend(shapes_i)
         y_max = max(y_max, peak)
 
     ss_traces, ss_ymax = _ss_sail_traces(agent, ss_events)
-    traces.extend(ss_traces)
+    sail_traces.extend(ss_traces)
     y_max = max(y_max, ss_ymax)
 
     agg_traces, agg_ymax = _aggregate_traces(action_values, action)
-    traces.extend(agg_traces)
+    sail_traces.extend(agg_traces)
     y_max = max(y_max, agg_ymax)
+
+    _assign_axes(sail_traces, xaxis="x2", yaxis="y2")
+    shapes = _shapes_on_subplot(shapes, xref="x2", yref="y2")
 
     x_max = max(
         max((d for d, _ in ll_events), default=1),
@@ -371,25 +555,72 @@ def sails_frame(agent, environment, state, *, day=None):
             f"Choice sails with a horizon of {n} days", action
         )
 
+    # Stack a bit wider than before; leave headroom above panels for subplot title
+    stack_domain = [0.0, 0.3]
+    sails_domain = [0.35, 1.0]
+    stack_title_x = 0.5 * (stack_domain[0] + stack_domain[1])
+    panel_annotations = list(stack_annotations) + [
+        {
+            "x": stack_title_x,
+            "y": 1.0,
+            "xref": "paper",
+            "yref": "paper",
+            "text": "Summation of discounted values<br>(Aggregate option values)",
+            "showarrow": False,
+            "font": {"size": 12, "color": "#1a1d23"},
+            "xanchor": "center",
+            "yanchor": "top",
+            "align": "center",
+            "yshift": -52,
+        }
+    ]
+
     return {
         "kind": "sails",
-        "traces": traces,
+        "traces": stack_traces + sail_traces,
         "layout": {
             "title": title,
+            "barmode": "overlay",
             "xaxis": {
+                "title": "",
+                "domain": stack_domain,
+                "range": [-1.25, 2.25],
+                "tickvals": [0.0, 1.0],
+                "ticktext": ["snack", "resist"],
+                "zeroline": False,
+            },
+            "yaxis": {
+                "title": "Perceived value of reward",
+                "domain": [0.0, 0.88],
+                "range": [0, stack_ymax * 1.18],
+                "gridcolor": "rgba(0,0,0,0.12)",
+            },
+            "xaxis2": {
                 "title": "Hours from now",
+                "domain": sails_domain,
                 "range": [-pad_x, x_max + pad_x],
                 "tickvals": xticks,
                 "ticktext": xticklabels,
+                "anchor": "y2",
             },
-            "yaxis": {
+            "yaxis2": {
                 "title": "Perceived value",
+                "domain": [0.0, 0.88],
                 "range": [0, y_max * 1.25 if y_max else 1],
+                "anchor": "x2",
+                "overlaying": False,
+                "side": "left",
             },
+            "annotations": panel_annotations,
             "shapes": shapes,
-            "legend": {"orientation": "h", "y": -0.18},
-            "margin": {"l": 60, "r": 20, "t": 50, "b": 80},
-            "height": 520,
+            "legend": {
+                "orientation": "h",
+                "y": -0.16,
+                "x": sails_domain[0],
+                "xref": "paper",
+            },
+            "margin": {"l": 60, "r": 24, "t": 72, "b": 90},
+            "height": 700,
         },
         "meta": {
             "day": day,
@@ -549,7 +780,7 @@ def aggregate_frame(agent, environment, state):
             "shapes": shapes,
             "legend": {"orientation": "h", "y": -0.15},
             "margin": {"l": 60, "r": 20, "t": 50, "b": 70},
-            "height": 520,
+            "height": 620,
         },
         "meta": {
             "choice": action,
@@ -646,7 +877,7 @@ def hyperbolic_frame(reward, initial_delay, discount_factor, *, elapsed=0):
             "shapes": shapes,
             "legend": {"orientation": "h", "y": -0.15},
             "margin": {"l": 60, "r": 20, "t": 50, "b": 70},
-            "height": 520,
+            "height": 620,
             # Keep zoom/axis identity stable across steps for this param set
             "uirevision": f"hyp|{reward}|{initial_delay}|{k}",
         },
@@ -756,7 +987,7 @@ def sticky_curves(agent, environment, state, delay_max, delay_step, reward_LL=No
             },
             "legend": {"orientation": "h", "y": -0.22},
             "margin": {"l": 60, "r": 20, "t": 50, "b": 80},
-            "height": 520,
+            "height": 620,
         },
         "meta": {
             "stickiness": xs,
