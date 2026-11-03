@@ -48,10 +48,17 @@ if SHOW_STICKY_BREAKDOWN:
 COLORS = {
     "snack": "#c44e52",
     "resist": "#4c72b0",
-    # Lighter tint for option sails; aggregates use the opaque snack / resist colours
-    "snack_sail": "#e89a9e",
-    "resist_sail": "#8fb0d9",
+    # Sail bases (horizon fade lightens these for later foresight days)
+    "snack_sail": "#c44e52",
+    "resist_sail": "#4c72b0",
 }
+
+
+def fade(base, i, n, max_fade=0.72):
+    """i=0 full base colour; i=n-1 faded toward white. Scales with horizon n."""
+    rgb = matplotlib.colors.to_rgb(base)
+    t = (i / (n - 1) if n > 1 else 0.0) * max_fade
+    return tuple(c + (1.0 - c) * t for c in rgb)
 
 
 def outcome_events(agent, environment, state):
@@ -74,7 +81,7 @@ def outcome_events(agent, environment, state):
     return ss_events, ll_events
 
 
-def plot_ll_sail(axes, agent, delay, reward, decision_t, color, *, label=None):
+def plot_ll_sail(axes, agent, delay, reward, decision_t, color, *, label_base, label=None):
     """Hyperbolic sail for one LL: full curve from t=0 to delivery."""
     xs, ys = [], []
     for t in range(0, delay + 1):
@@ -87,7 +94,7 @@ def plot_ll_sail(axes, agent, delay, reward, decision_t, color, *, label=None):
 
     tip = ys[-1]
     axes.scatter(delay, tip, s=50, color=color, zorder=5)
-    axes.text(delay, tip, f"  {tip:.2f}", color=color, va="bottom", ha="left", size=11)
+    axes.text(delay, tip, f"  {tip:.2f}", color=label_base, va="bottom", ha="left", size=11)
 
     # Pure V_hyp at this sail's decision node (remaining delay from that choice)
     decision_val = agent.value_function(reward, delay - decision_t)
@@ -99,7 +106,7 @@ def plot_ll_sail(axes, agent, delay, reward, decision_t, color, *, label=None):
         decision_t + offset,
         decision_val,
         f"{prefix}{decision_val:.2f}",
-        color=color,
+        color=label_base,
         va="bottom",
         ha=ha,
         size=11,
@@ -108,10 +115,15 @@ def plot_ll_sail(axes, agent, delay, reward, decision_t, color, *, label=None):
     return max(ys) if ys else 0
 
 
-def plot_ss_sails(axes, agent, ss_events, color):
-    """SS at the current decision is a tip scatter; later SS get sails back to t=0."""
+def plot_ss_sails(axes, agent, ss_events, base_color):
+    """SS sails feed back to t=0.
+    Colour fades toward white as foresight index increases (fading scales with horizon).
+    Data labels stay fully opaque base colour.
+    """
     y_max = 0
+    n = len(ss_events)
     for i, (delay, reward) in enumerate(ss_events):
+        color = fade(base_color, i, n)
         label = "snack" if i == 0 else None
         if delay == 0:
             tip = agent.value_function(reward, 0)
@@ -121,7 +133,7 @@ def plot_ss_sails(axes, agent, ss_events, color):
                 delay,
                 tip,
                 f"  {tip:.2f}",
-                color=color,
+                color=base_color,
                 va="bottom",
                 ha="left",
                 size=11,
@@ -141,7 +153,7 @@ def plot_ss_sails(axes, agent, ss_events, color):
             delay,
             tip,
             f"  {tip:.2f}",
-            color=color,
+            color=base_color,
             va="bottom",
             ha="left",
             size=11,
@@ -213,16 +225,19 @@ def main():
     fig, axes = plt.subplots(figsize=(10, 5))
     y_max = 0
 
+    n_sails = len(ll_events)
     for i, (delay, reward) in enumerate(ll_events):
         # Decision node for this foresight day (SS offer time = t * interval)
         decision_t = ss_events[i][0]
+        sail_color = fade(COLORS["resist_sail"], i, n_sails)
         peak = plot_ll_sail(
             axes,
             agent,
             delay,
             reward,
             decision_t,
-            COLORS["resist_sail"],
+            sail_color,
+            label_base=COLORS["resist_sail"],
             label="resist" if i == 0 else None,
         )
         y_max = max(y_max, peak)

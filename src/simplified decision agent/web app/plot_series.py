@@ -13,10 +13,21 @@ from sticky_decisions import stick_p_t
 COLORS = {
     "snack": "#c44e52",
     "resist": "#4c72b0",
-    # Lighter tint for option sails; aggregates use the opaque snack / resist colours
-    "snack_sail": "#e89a9e",
-    "resist_sail": "#8fb0d9",
+    # Sail bases; later foresight days fade toward white (labels stay opaque)
+    "snack_sail": "#c44e52",
+    "resist_sail": "#4c72b0",
 }
+
+
+def fade(base_hex, i, n, max_fade=0.72):
+    """i=0 full base colour; i=n-1 faded toward white. Scales with horizon n."""
+    h = base_hex.lstrip("#")
+    r, g, b = (int(h[j : j + 2], 16) for j in (0, 2, 4))
+    t = (i / (n - 1) if n > 1 else 0.0) * max_fade
+    r = int(round(r + (255 - r) * t))
+    g = int(round(g + (255 - g) * t))
+    b = int(round(b + (255 - b) * t))
+    return f"#{r:02x}{g:02x}{b:02x}"
 
 # Hours left of the marker for left-side numerals.
 # Aggregates sit further left than per-outcome discounted values.
@@ -78,7 +89,7 @@ def foreseeable_events(agent, environment, state):
 
 
 def _value_label(x, y, text, *, color, position="middle left", size=12):
-    """Numeral only (no marker). Labels use opaque hues; sails stay lighter."""
+    """Numeral only (no marker). Labels stay fully opaque; sails may be faded."""
     return {
         "type": "scatter",
         "mode": "text",
@@ -92,9 +103,13 @@ def _value_label(x, y, text, *, color, position="middle left", size=12):
     }
 
 
-def _ll_sail_trace(agent, delay, reward, decision_t, *, label=None, show_legend=True):
-    """One LL hyperbolic sail + tip / decision-node markers."""
-    sail_color = COLORS["resist_sail"]
+def _ll_sail_trace(
+    agent, delay, reward, decision_t, *, sail_color, label=None, show_legend=True
+):
+    """One LL hyperbolic sail + tip / decision-node markers.
+
+    Sail/marker colour may be horizon-faded; numerals stay opaque resist.
+    """
     label_color = COLORS["resist"]
     xs = list(range(0, delay + 1))
     ys = [agent.value_function(reward, delay - t) for t in xs]
@@ -170,12 +185,17 @@ def _ll_sail_trace(agent, delay, reward, decision_t, *, label=None, show_legend=
 
 
 def _ss_sail_traces(agent, ss_events):
-    """SS at the current decision is a tip scatter; later SS get sails back to t=0."""
-    sail_color = COLORS["snack_sail"]
+    """SS at the current decision is a tip scatter; later SS get sails back to t=0.
+
+    Sail colour fades with foresight index; numerals stay opaque snack.
+    """
+    base = COLORS["snack_sail"]
     label_color = COLORS["snack"]
     traces = []
     y_max = 0
+    n = len(ss_events)
     for i, (delay, reward) in enumerate(ss_events):
+        sail_color = fade(base, i, n)
         # Labels sit left of the tip so they stay clear of crossing sails
         tip_label_x = delay - LABEL_DISCOUNT_OFFSET
         if delay == 0:
@@ -196,7 +216,7 @@ def _ss_sail_traces(agent, ss_events):
             traces.append(
                 _value_label(
                     tip_label_x,
-                    tip + 0.5,
+                    tip,
                     f"{tip:.2f}",
                     color=label_color,
                     position="middle left",
@@ -310,6 +330,7 @@ def sails_frame(agent, environment, state, *, day=None):
     shapes = []
     y_max = 0
 
+    n_sails = len(ll_events)
     for i, (delay, reward) in enumerate(ll_events):
         decision_t = ss_events[i][0]
         sail_traces, sail_shapes, peak = _ll_sail_trace(
@@ -317,6 +338,7 @@ def sails_frame(agent, environment, state, *, day=None):
             delay,
             reward,
             decision_t,
+            sail_color=fade(COLORS["resist_sail"], i, n_sails),
             label="resist" if i == 0 else None,
             show_legend=(i == 0),
         )

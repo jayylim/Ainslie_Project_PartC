@@ -42,7 +42,6 @@ agent_params = {
 
 # used by StickyHypAgent only; s=1 matches HypAgent long vision
 stickiness = 0.6
-
 max_steps = None  # used when env length is None; also caps the run as a safety stop
 
 

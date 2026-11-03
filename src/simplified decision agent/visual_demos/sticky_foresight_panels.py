@@ -20,6 +20,7 @@ Figure layout (one window, two panels):
           Two bars per hour (snack-first | resist-first).
           Side Σ bars are sectioned by each foresight EV_t and labeled
           with hours + contribution; totals are V(a) = sum_t EV_t(a).
+          Σ segment colours fade dark→light with foresight (modular in n).
 '''
 
 import matplotlib.pyplot as plt
@@ -105,6 +106,10 @@ def plot_persistence_chain(axes, rows, s):
         )
 
     axes.set_ylim(-0.05, 1.08)
+    x_max = max(hours) if hours else 0
+    xticks = list(range(0, int(x_max) + 1, 24))
+    axes.set_xticks(xticks)
+    axes.set_xticklabels([str(t) for t in xticks])
     axes.set_xlabel("Hours from now")
     axes.set_ylabel("Foresight probability weight")
     axes.set_title(
@@ -192,10 +197,11 @@ def plot_ev_stacked_bars(axes, rows, action_values, chosen):
 
     snack_cmap = plt.cm.Reds
     resist_cmap = plt.cm.Blues
-    # Map foresight index → shade (early days darker / more saturated)
-    def _shade(cmap, i, n_seg):
-        # avoid ultra-light / white end of colormap
-        return cmap(0.35 + 0.55 * (i / max(n_seg - 1, 1)))
+
+    def fade_cmap(cmap, i, n_seg):
+        # i=0 dark, i=n-1 light; scales with horizon
+        t = i / (n_seg - 1) if n_seg > 1 else 0.0
+        return cmap(0.88 - 0.56 * t)
 
     bottom_s = 0.0
     bottom_r = 0.0
@@ -205,25 +211,27 @@ def plot_ev_stacked_bars(axes, rows, action_values, chosen):
         h_r = ev_resist[i]
         edge_s = 1.2 if chosen == "snack" else 0.5
         edge_r = 1.2 if chosen == "resist" else 0.5
+        t = i / (n - 1) if n > 1 else 0.0
+        ink = "#ffffff" if t < 0.55 else "#333333"
         axes.bar(
             x_sum_snack,
             h_s,
             width=bar_w * 1.15,
             bottom=bottom_s,
-            color=_shade(snack_cmap, i, n),
+            color=fade_cmap(snack_cmap, i, n),
             edgecolor="black",
             linewidth=edge_s,
-            label=r"$\sum EV_t$ snack (by hour)" if i == 0 else None,
+            label=r"$\sum EV_t$ snack (near→far, dark→light)" if i == 0 else None,
         )
         axes.bar(
             x_sum_resist,
             h_r,
             width=bar_w * 1.15,
             bottom=bottom_r,
-            color=_shade(resist_cmap, i, n),
+            color=fade_cmap(resist_cmap, i, n),
             edgecolor="black",
             linewidth=edge_r,
-            label=r"$\sum EV_t$ resist (by hour)" if i == 0 else None,
+            label=r"$\sum EV_t$ resist (near→far, dark→light)" if i == 0 else None,
         )
         # Label each section by foresight hour + contribution
         if h_s >= min_label:
@@ -234,7 +242,7 @@ def plot_ev_stacked_bars(axes, rows, action_values, chosen):
                 ha="center",
                 va="center",
                 fontsize=7,
-                color="white" if i < n * 0.6 else "#333333",
+                color=ink,
             )
         if h_r >= min_label:
             axes.text(
@@ -244,7 +252,7 @@ def plot_ev_stacked_bars(axes, rows, action_values, chosen):
                 ha="center",
                 va="center",
                 fontsize=7,
-                color="white" if i < n * 0.6 else "#333333",
+                color=ink,
             )
         bottom_s += h_s
         bottom_r += h_r

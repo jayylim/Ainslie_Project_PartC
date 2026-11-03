@@ -31,10 +31,17 @@ from main import agent_params, env_params, max_steps
 COLORS = {
     "snack": "#c44e52",
     "resist": "#4c72b0",
-    # Lighter tint for option sails; aggregates use the opaque snack / resist colours
-    "snack_sail": "#e89a9e",
-    "resist_sail": "#8fb0d9",
+    # Sail bases; later foresight days fade toward white (labels stay opaque)
+    "snack_sail": "#c44e52",
+    "resist_sail": "#4c72b0",
 }
+
+
+def fade(base, i, n, max_fade=0.72):
+    """i=0 full base colour; i=n-1 faded toward white. Scales with horizon n."""
+    rgb = matplotlib.colors.to_rgb(base)
+    t = (i / (n - 1) if n > 1 else 0.0) * max_fade
+    return tuple(c + (1.0 - c) * t for c in rgb)
 
 
 def foreseeable_events(agent, environment, state):
@@ -45,7 +52,7 @@ def foreseeable_events(agent, environment, state):
     )
 
 
-def plot_ll_sail(axes, agent, delay, reward, decision_t, color, *, label=None):
+def plot_ll_sail(axes, agent, delay, reward, decision_t, color, *, label_base, label=None):
     """Hyperbolic sail for one LL: full curve from t=0 to delivery."""
     xs, ys = [], []
     for t in range(0, delay + 1):
@@ -58,7 +65,7 @@ def plot_ll_sail(axes, agent, delay, reward, decision_t, color, *, label=None):
 
     tip = ys[-1]
     axes.scatter(delay, tip, s=50, color=color, zorder=5)
-    axes.text(delay, tip, f"  {tip:.2f}", color=color, va="bottom", ha="left", size=11)
+    axes.text(delay, tip, f"  {tip:.2f}", color=label_base, va="bottom", ha="left", size=11)
 
     # Value at this sail's decision node (remaining delay from that choice)
 
@@ -73,7 +80,7 @@ def plot_ll_sail(axes, agent, delay, reward, decision_t, color, *, label=None):
         decision_t + offset,
         decision_val,
         f"{prefix}{decision_val:.2f}",
-        color=color,
+        color=label_base,
         va="bottom",
         ha=ha,
         size=11,
@@ -82,10 +89,15 @@ def plot_ll_sail(axes, agent, delay, reward, decision_t, color, *, label=None):
     return max(ys) if ys else 0
 
 
-def plot_ss_sails(axes, agent, ss_events, color):
-    """SS at the current decision is a tip scatter; later SS get sails back to t=0."""
+def plot_ss_sails(axes, agent, ss_events, base_color):
+    """SS at the current decision is a tip scatter; later SS get sails back to t=0.
+
+    Sail colour fades with foresight index; data labels stay fully opaque.
+    """
     y_max = 0
+    n = len(ss_events)
     for i, (delay, reward) in enumerate(ss_events):
+        color = fade(base_color, i, n)
         label = "snack" if i == 0 else None
         if delay == 0:
             tip = agent.value_function(reward, 0)
@@ -95,7 +107,7 @@ def plot_ss_sails(axes, agent, ss_events, color):
                 delay,
                 tip,
                 f"  {tip:.2f}",
-                color=color,
+                color=base_color,
                 va="bottom",
                 ha="left",
                 size=11,
@@ -115,7 +127,7 @@ def plot_ss_sails(axes, agent, ss_events, color):
             delay,
             tip,
             f"  {tip:.2f}",
-            color=color,
+            color=base_color,
             va="bottom",
             ha="left",
             size=11,
@@ -184,16 +196,19 @@ def draw_frame(axes, agent, environment, state, steps):
     axes.clear()
     y_max = 0
 
+    n_sails = len(ll_events)
     for i, (delay, reward) in enumerate(ll_events):
         # SS offer / decision node for this step (same index in the plan)
         decision_t = ss_events[i][0]
+        sail_color = fade(COLORS["resist_sail"], i, n_sails)
         peak = plot_ll_sail(
             axes,
             agent,
             delay,
             reward,
             decision_t,
-            COLORS["resist_sail"],
+            sail_color,
+            label_base=COLORS["resist_sail"],
             label="resist" if i == 0 else None,
         )
         y_max = max(y_max, peak)
@@ -225,11 +240,11 @@ def draw_frame(axes, agent, environment, state, steps):
 
     # Perceived value of each outcome from now (same terms as aggregate_value)
     print(f"Day {steps}  |  Horizon = {n}")
-    print(f"SS delay | V(reward, delay) from now:")
+    print(f"Day| Hours from now , Perceived discounted value:")
     for delay, reward in ss_events:
         v = agent.value_function(reward, delay)
         print(f"Day {delay//24 + 1} | {delay}h  Value={v:.4f}")
-    print(f"LL delay | V(reward, delay) from now:")
+    print(f"Day| Hours from now , Perceived discounted value:")
     for delay, reward in ll_events:
         v = agent.value_function(reward, delay)
         print(f"Day {-(-delay//24)} | {delay}h  Value={v:.4f}")
