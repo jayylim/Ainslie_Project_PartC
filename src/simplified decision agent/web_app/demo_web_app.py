@@ -43,8 +43,8 @@ DEFAULT_DELAY_STEP = 4
 
 app = Flask(__name__)
 
-# Mutable live config + steppable session (single local user)
-_config = {
+# Defaults from main.py (immutable seed for "Reset to default")
+_DEFAULT_CONFIG = {
     "ss_value": env_params["rewards"]["SS"]["value"],
     "ss_delay": env_params["rewards"]["SS"]["delay"],
     "ll_value": env_params["rewards"]["LL"]["value"],
@@ -56,6 +56,9 @@ _config = {
     # Same semantics as main.max_steps / visualizing_main: None = no step cap
     "max_steps": default_max_steps,
 }
+
+# Mutable live config + steppable session (single local user)
+_config = copy.deepcopy(_DEFAULT_CONFIG)
 _decision_interval = env_params["decision_interval"]
 _start = env_params["start"]
 
@@ -347,6 +350,7 @@ def api_sticky():
 
 @app.route("/")
 def index():
+    # Form fields seed from live config; DEFAULT_CONFIG in JS is always main.py seed
     return render_template_string(
         PAGE,
         ss_value=_config["ss_value"],
@@ -358,6 +362,15 @@ def index():
         vision=_config["vision"],
         discount_factor=_config["discount_factor"],
         max_steps=_config["max_steps"] if _config["max_steps"] is not None else "",
+        default_ss_value=_DEFAULT_CONFIG["ss_value"],
+        default_ss_delay=_DEFAULT_CONFIG["ss_delay"],
+        default_ll_value=_DEFAULT_CONFIG["ll_value"],
+        default_ll_delay=_DEFAULT_CONFIG["ll_delay"],
+        default_length=_DEFAULT_CONFIG["length"],
+        default_horizon=_DEFAULT_CONFIG["horizon"],
+        default_vision=_DEFAULT_CONFIG["vision"],
+        default_discount_factor=_DEFAULT_CONFIG["discount_factor"],
+        default_max_steps=_DEFAULT_CONFIG["max_steps"],
         default_delay_max=DEFAULT_DELAY_MAX,
         default_delay_step=DEFAULT_DELAY_STEP,
     )
@@ -419,12 +432,27 @@ PAGE = r"""
     box-shadow: 0 1px 2px rgba(26, 29, 35, 0.04);
   }
   .panel-label {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
     font-size: 0.72rem;
     text-transform: uppercase;
     letter-spacing: 0.08em;
     color: var(--muted);
     margin-bottom: 0.65rem;
     font-family: ui-sans-serif, system-ui, sans-serif;
+  }
+  .panel-label button.secondary {
+    text-transform: none;
+    letter-spacing: 0;
+    background: #fff;
+    color: var(--ink);
+    border: 1px solid #c9d0da;
+    padding: 0.35rem 0.75rem;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 0.82rem;
   }
   .params {
     display: grid;
@@ -579,7 +607,10 @@ PAGE = r"""
   <p class="subtitle">Shared parameters · switch between steppable, static, and sticky views</p>
 
   <div class="panel">
-    <div class="panel-label">Main parameters</div>
+    <div class="panel-label">
+      <span>Main parameters</span>
+      <button type="button" class="secondary" id="btnResetDefaults">Reset to default</button>
+    </div>
     <div class="params">
       <label>SS value
         <input type="number" id="ssValue" value="{{ ss_value }}" min="0" step="0.5"/>
@@ -665,7 +696,18 @@ PAGE = r"""
 </div>
 
 <script>
-const DEFAULT_VISION = {{ vision|tojson }};
+const DEFAULT_CONFIG = {
+  ss_value: {{ default_ss_value|tojson }},
+  ss_delay: {{ default_ss_delay|tojson }},
+  ll_value: {{ default_ll_value|tojson }},
+  ll_delay: {{ default_ll_delay|tojson }},
+  length: {{ default_length|tojson }},
+  horizon: {{ default_horizon|tojson }},
+  discount_factor: {{ default_discount_factor|tojson }},
+  max_steps: {{ default_max_steps|tojson }},
+  vision: {{ default_vision|tojson }},
+};
+const DEFAULT_VISION = DEFAULT_CONFIG.vision;
 const DEFAULT_DELAY_MAX = {{ default_delay_max }};
 const DEFAULT_DELAY_STEP = {{ default_delay_step }};
 
@@ -692,7 +734,26 @@ const delayMaxEl = document.getElementById("delayMax");
 const delayStepEl = document.getElementById("delayStep");
 const btnStep = document.getElementById("btnStep");
 const btnReset = document.getElementById("btnReset");
+const btnResetDefaults = document.getElementById("btnResetDefaults");
 const stepHint = document.getElementById("stepHint");
+
+function optionalToInput(value) {
+  return value == null || value === "" ? "" : String(value);
+}
+
+function applyDefaultsToForm() {
+  ssValueEl.value = DEFAULT_CONFIG.ss_value;
+  ssDelayEl.value = DEFAULT_CONFIG.ss_delay;
+  llValueEl.value = DEFAULT_CONFIG.ll_value;
+  llDelayEl.value = DEFAULT_CONFIG.ll_delay;
+  lengthEl.value = optionalToInput(DEFAULT_CONFIG.length);
+  horizonEl.value = optionalToInput(DEFAULT_CONFIG.horizon);
+  discountFactorEl.value = DEFAULT_CONFIG.discount_factor;
+  maxStepsEl.value = optionalToInput(DEFAULT_CONFIG.max_steps);
+  vision = DEFAULT_CONFIG.vision;
+  syncVisionButtons();
+  clearConfigError();
+}
 
 function steppableDemo() {
   return steppableDemoSelect.value || "visualizing_main";
@@ -979,6 +1040,12 @@ btnReset.addEventListener("click", async () => {
   } catch (err) {
     if (!err.configError) metaEl.textContent = "Reset failed: " + err;
   }
+});
+
+btnResetDefaults.addEventListener("click", () => {
+  clearTimeout(configTimer);
+  applyDefaultsToForm();
+  applyConfigAndRefresh();
 });
 
 btnStep.addEventListener("click", async () => {
