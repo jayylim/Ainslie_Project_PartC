@@ -1,0 +1,14 @@
+# Render Blueprint — free web service for the unified demo UI.
+# Connect this repo in Render → New → Blueprint, or create a Web Service
+# and paste the build/start commands below.
+services:
+  - type: web
+    name: ainslie-decision-demos
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: >-
+      gunicorn -b 0.0.0.0:$PORT
+      --chdir "src/simplified decision agent"
+      web_app.demo_web_app:app
+    healthCheckPath: /
