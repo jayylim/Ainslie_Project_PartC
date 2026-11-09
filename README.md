@@ -2,6 +2,22 @@
 
 Hyperbolic discounter on a memoryless SS/LL timeline (Ainslie-style bundling). Edit params in `main.py`, then run from this directory.
 
+## Live demo
+
+Interactive demos (no install): **[https://ainslie-project-partc.onrender.com](https://ainslie-project-partc.onrender.com)**
+
+
+#### Shared parameters (apply to every tab): 
+- SS/LL reward value and delays length (in hours)
+- Environment length (in hours)
+- Agent horizon (in **_n_ decision nodes**) 
+  -  Clear length or horizon for *none* (at least one must be set)
+- Discount factor `k`
+- Max steps (for stepabble environments)
+  - Blank max steps = no run cap (same as `main.max_steps = None`).
+- Vision mode (Short/Long)
+
+
 ## Vision modes
 
 Set `agent_params["vision"]` in `main.py`:
@@ -115,11 +131,11 @@ Each demo is an independent visualisation to demonstrate different layers/variat
 
 
 
-### Unified web app
+### Web App Setup
 
 Interactive browser UI over the demos above. Same venv and deps as [Quick start](#quick-start) (`flask` / `gunicorn` are in `requirements.txt`).
 
-#### Local
+#### For Local
 
 From the **repo root**:
 
@@ -138,7 +154,7 @@ python -m web_app.demo_web_app
 
 Open **[http://127.0.0.1:5050](http://127.0.0.1:5050)** in Firefox, Chrome, or Safari (use `127.0.0.1`, not `localhost` — on macOS, `localhost:5000` is often AirPlay and returns 403). Stop the server with `Ctrl+C`.
 
-#### Hosted (Render)
+#### For Web Hosted (Render)
 
 This repo includes a `render.yaml` Blueprint. On [Render](https://render.com): **New → Blueprint** (or **Web Service**), connect this GitHub repo, and deploy. Free tier sleeps when idle; the first visit after sleep can take ~30–60s.
 
@@ -147,22 +163,4 @@ Manual Web Service settings if you skip the Blueprint:
 - **Build command:** `pip install -r requirements.txt`
 - **Start command:** `gunicorn -b 0.0.0.0:$PORT --chdir "src/simplified decision agent" web_app.demo_web_app:app`
 
-After deploy, put the public URL here (and optionally at the top of this README):
-
-```text
-Live demo: https://YOUR-SERVICE.onrender.com
-```
-
-**Shared params** (apply to every tab): SS/LL rewards and delays, env length, agent horizon, discount factor `k`, max steps, short/long vision. Clear length or horizon for *none* (at least one must be set). Blank max steps = no run cap (same as `main.max_steps = None`).
-
-**Tabs:**
-
-
-| Tab           | Demos                                   | Controls                                             |
-| ------------- | --------------------------------------- | ---------------------------------------------------- |
-| Steppable     | `visualizing_main` · `hyperbolic_curve` | Reset / Step — env days, or reward approaching day 0 |
-| Non-steppable | `visualise_sails` · `aggregate_sail`    | Demo select only                                     |
-| Sticky        | sticky indifference frontier            | Extra LL delay max / step sliders                    |
-
-
-Plotly loads from a CDN (needs network on first load). Math lives in `web_app/plot_series.py` (mirrors the matplotlib demos); the browser only draws.
+Public URL: [https://ainslie-project-partc.onrender.com](https://ainslie-project-partc.onrender.com) (also linked at the top of this README).
