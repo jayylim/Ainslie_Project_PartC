@@ -5,7 +5,7 @@ Shared top-level params (rewards, delays, env length, horizon, vision).
 Three sections:
   - Steppable: visualizing_main (env days) | hyperbolic_curve (reward approaching day 0)
   - Non-steppable: visualise_sails | aggregate_sail
-  - Sticky: max SS resisted vs stickiness (sticky_graph)
+  - Sticky: sticky_graph + visualise_sticky_sails (stacked; click current curve sets s)
 
 Math lives in Python (core agent/env + plot_series); the browser draws with Plotly.
 
@@ -33,13 +33,20 @@ sys.path.insert(0, str(_WEB_DIR))
 from flask import Flask, jsonify, render_template_string, request
 
 from agents.hyperbolic import HypAgent
+from agents.sticky import StickyHypAgent
 from environments.timeline import TimelineEnvironment
-from main import agent_params, env_params, max_steps as default_max_steps
+from main import (
+    agent_params,
+    env_params,
+    max_steps as default_max_steps,
+    stickiness as default_stickiness,
+)
 import plot_series
 
 # === Defaults (seeded from main.py) ===
 DEFAULT_DELAY_MAX = 24
 DEFAULT_DELAY_STEP = 4
+DEFAULT_STICKINESS = float(default_stickiness)
 
 app = Flask(__name__)
 
@@ -326,6 +333,17 @@ def api_demo(name):
     environment, agent, state = fresh_snapshot()
     if name == "visualise_sails":
         return jsonify(plot_series.sails_frame(agent, environment, state))
+    if name == "visualise_sticky_sails":
+        s = request.args.get("stickiness", DEFAULT_STICKINESS, type=float)
+        if s is None or s != s:  # None / NaN
+            return jsonify({"error": "stickiness must be a number in [0, 1]"}), 400
+        s = max(0.0, min(1.0, float(s)))
+        sticky_agent = StickyHypAgent(
+            **_build_agent_params(_config), stickiness=s
+        )
+        return jsonify(
+            plot_series.sticky_sails_frame(sticky_agent, environment, state)
+        )
     if name == "aggregate_sail":
         return jsonify(plot_series.aggregate_frame(agent, environment, state))
     return jsonify({"error": f"Unknown demo: {name}"}), 404
@@ -373,6 +391,7 @@ def index():
         default_max_steps=_DEFAULT_CONFIG["max_steps"],
         default_delay_max=DEFAULT_DELAY_MAX,
         default_delay_step=DEFAULT_DELAY_STEP,
+        default_stickiness=DEFAULT_STICKINESS,
     )
 
 
@@ -581,23 +600,38 @@ PAGE = r"""
     min-width: 160px;
   }
   .range-pair span { color: var(--muted); font-size: 0.8rem; }
-  #meta {
+  .meta-line {
     color: var(--muted);
     font-size: 0.85rem;
     font-family: ui-sans-serif, system-ui, sans-serif;
     min-height: 1.2em;
     margin: 0.35rem 0 0.5rem;
   }
-  #meta .choice {
+  .meta-line .choice {
     color: var(--ink);
     font-weight: 800;
     opacity: 1;
   }
-  #chart {
+  .chart-box {
     background: #fff;
     border: 1px solid #d8dde5;
     border-radius: 10px;
     padding: 0.4rem;
+  }
+  #stickyStack {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+  #stickyStack.hidden { display: none; }
+  #singleView.hidden { display: none; }
+  .sticky-plot-label {
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--muted);
+    font-family: ui-sans-serif, system-ui, sans-serif;
+    margin: 0 0 0.2rem;
   }
 </style>
 </head>
@@ -688,10 +722,27 @@ PAGE = r"""
         <span>LL delay step: <strong id="delayStepVal">{{ default_delay_step }}h</strong></span>
         <input type="range" id="delayStep" min="1" max="12" step="1" value="{{ default_delay_step }}"/>
       </div>
+      <label style="min-width:120px;">Stickiness s
+        <input type="number" id="stickiness" value="{{ default_stickiness }}" min="0" max="1" step="0.01"/>
+      </label>
     </div>
 
-    <div id="meta"></div>
-    <div id="chart"></div>
+    <div id="singleView">
+      <div id="meta" class="meta-line"></div>
+      <div id="chart" class="chart-box"></div>
+    </div>
+    <div id="stickyStack" class="hidden">
+      <div>
+        <p class="sticky-plot-label">Sticky graph · click black (current) curve to set s</p>
+        <div id="metaGraph" class="meta-line"></div>
+        <div id="chartGraph" class="chart-box"></div>
+      </div>
+      <div>
+        <p class="sticky-plot-label">Sticky sails at s</p>
+        <div id="metaSails" class="meta-line"></div>
+        <div id="chartSails" class="chart-box"></div>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -710,14 +761,19 @@ const DEFAULT_CONFIG = {
 const DEFAULT_VISION = DEFAULT_CONFIG.vision;
 const DEFAULT_DELAY_MAX = {{ default_delay_max }};
 const DEFAULT_DELAY_STEP = {{ default_delay_step }};
+const DEFAULT_STICKINESS = {{ default_stickiness|tojson }};
 
 let vision = DEFAULT_VISION;
 let section = "steppable";
-let plotted = false;
+let stickyClickBound = false;
 let configTimer = null;
 let finished = false;
 
 const metaEl = document.getElementById("meta");
+const metaGraphEl = document.getElementById("metaGraph");
+const metaSailsEl = document.getElementById("metaSails");
+const singleViewEl = document.getElementById("singleView");
+const stickyStackEl = document.getElementById("stickyStack");
 const ssValueEl = document.getElementById("ssValue");
 const ssDelayEl = document.getElementById("ssDelay");
 const llValueEl = document.getElementById("llValue");
@@ -732,6 +788,7 @@ const demoSelect = document.getElementById("demoSelect");
 const steppableDemoSelect = document.getElementById("steppableDemoSelect");
 const delayMaxEl = document.getElementById("delayMax");
 const delayStepEl = document.getElementById("delayStep");
+const stickinessEl = document.getElementById("stickiness");
 const btnStep = document.getElementById("btnStep");
 const btnReset = document.getElementById("btnReset");
 const btnResetDefaults = document.getElementById("btnResetDefaults");
@@ -817,6 +874,12 @@ function showConfigError(message, fields) {
   maxStepsEl.classList.toggle("field-error", f.includes("max_steps"));
 }
 
+function syncViewPanes() {
+  const sticky = section === "sticky";
+  singleViewEl.classList.toggle("hidden", sticky);
+  stickyStackEl.classList.toggle("hidden", !sticky);
+}
+
 function setSection(name) {
   section = name;
   document.querySelectorAll(".tabs button").forEach((b) => {
@@ -825,6 +888,7 @@ function setSection(name) {
   document.getElementById("chromeSteppable").classList.toggle("hidden", name !== "steppable");
   document.getElementById("chromeNon").classList.toggle("hidden", name !== "nonsteppable");
   document.getElementById("chromeSticky").classList.toggle("hidden", name !== "sticky");
+  syncViewPanes();
   refresh();
 }
 
@@ -872,11 +936,28 @@ async function pushConfig() {
   btnStep.disabled = false;
 }
 
-function draw(payload) {
-  if (typeof Plotly === "undefined") {
-    metaEl.textContent = "Plotly failed to load (CDN blocked?). Refresh or check network.";
-    return;
-  }
+function clampStickiness(raw) {
+  let s = Number(raw);
+  if (!Number.isFinite(s)) s = DEFAULT_STICKINESS;
+  s = Math.max(0, Math.min(1, s));
+  return Math.round(s * 100) / 100;
+}
+
+function setStickiness(raw) {
+  stickinessEl.value = String(clampStickiness(raw));
+}
+
+function plotOpts() {
+  return {
+    responsive: true,
+    displayModeBar: true,
+    displaylogo: false,
+    scrollZoom: false,
+    modeBarButtonsToRemove: ["lasso2d", "select2d"],
+  };
+}
+
+function baseLayout(payload, uirevision) {
   const layout = Object.assign(
     {
       font: { family: "Iowan Old Style, Palatino Linotype, Georgia, serif", size: 13 },
@@ -885,80 +966,161 @@ function draw(payload) {
     },
     payload.layout || {}
   );
-  // Hyperbolic supplies its own uirevision so axes stay locked while stepping
   if (!layout.uirevision) {
-    layout.uirevision =
-      section +
-      "|" +
-      JSON.stringify(currentConfig()) +
-      "|" +
-      (section === "steppable" ? steppableDemo() : demoSelect.value || "");
+    layout.uirevision = uirevision;
   }
-  const opts = {
-    responsive: true,
-    displayModeBar: true,
-    displaylogo: false,
-    scrollZoom: false,
-    modeBarButtonsToRemove: ["lasso2d", "select2d"],
-  };
-  if (!plotted) {
-    Plotly.newPlot("chart", payload.traces, layout, opts);
-    plotted = true;
-  } else {
-    Plotly.react("chart", payload.traces, layout, opts);
-  }
+  return layout;
+}
 
+function fillMeta(el, payload) {
   const m = payload.meta || {};
   if (payload.kind === "sticky") {
-    metaEl.textContent =
+    el.textContent =
       `delays = [${(m.delays || []).join(", ")}]h · LL = ${m.reward_LL} · ` +
       `horizon = ${m.horizon} · discount_factor = ${m.discount_factor}`;
   } else if (m.action_values) {
     const av = m.action_values;
     const dayBit = m.day != null ? `Day ${m.day} · ` : "";
+    const stickyBit =
+      m.stickiness != null ? `s = ${Number(m.stickiness).toFixed(2)} · ` : "";
     const doneBit = m.finished ? " · finished" : "";
-    metaEl.innerHTML =
+    el.innerHTML =
       dayBit +
+      stickyBit +
       `<span class="choice">Agent chooses ${m.choice}</span>` +
       ` · snack = ${av.snack.toFixed(4)} · resist = ${av.resist.toFixed(4)}` +
       doneBit;
   } else if (payload.kind === "hyperbolic_curve") {
     const doneBit = m.finished ? " · finished" : "";
-    metaEl.innerHTML =
+    el.innerHTML =
       `elapsed = ${m.elapsed}h · remaining = ${m.remaining}h · ` +
       `<span class="choice">V(day 0) = ${m.perceived.toFixed(4)}</span>` +
       ` · k = ${m.discount_factor}` +
       doneBit;
   } else if (m.perceived != null) {
-    metaEl.textContent = `perceived at t=0 = ${m.perceived.toFixed(4)}`;
+    el.textContent = `perceived at t=0 = ${m.perceived.toFixed(4)}`;
   } else {
-    metaEl.textContent = "";
+    el.textContent = "";
   }
-
   if (m.finished != null) {
     finished = !!m.finished;
     btnStep.disabled = finished;
   }
 }
 
+function ensureStickyClickHandler() {
+  if (stickyClickBound) return;
+  const chart = document.getElementById("chartGraph");
+  chart.on("plotly_click", (ev) => {
+    if (section !== "sticky") return;
+    const pt = ev.points && ev.points[0];
+    if (!pt) return;
+    const isCurrent =
+      (pt.data && pt.data.meta && pt.data.meta.is_current) ||
+      String((pt.data && pt.data.name) || "").includes("(current)");
+    if (!isCurrent) return;
+    setStickiness(pt.x);
+    refreshStickySailsOnly();
+  });
+  stickyClickBound = true;
+}
+
+const plotReady = { chart: false, chartGraph: false, chartSails: false };
+
+function drawInto(divId, payload) {
+  if (typeof Plotly === "undefined") {
+    throw new Error("Plotly failed to load (CDN blocked?). Refresh or check network.");
+  }
+  const uirevision =
+    divId +
+    "|" +
+    JSON.stringify(currentConfig()) +
+    "|" +
+    (section === "steppable"
+      ? steppableDemo()
+      : section === "sticky"
+        ? divId === "chartSails"
+          ? "sticky-sails|" + stickinessEl.value
+          : "sticky-graph|" + delayMaxEl.value + "|" + delayStepEl.value
+        : demoSelect.value || "");
+  const layout = baseLayout(payload, uirevision);
+  const opts = plotOpts();
+  if (!plotReady[divId]) {
+    Plotly.newPlot(divId, payload.traces, layout, opts);
+    plotReady[divId] = true;
+  } else {
+    Plotly.react(divId, payload.traces, layout, opts);
+  }
+}
+
+function draw(payload) {
+  try {
+    drawInto("chart", payload);
+    fillMeta(metaEl, payload);
+  } catch (err) {
+    metaEl.textContent = String(err.message || err);
+  }
+}
+
+function drawStickyPair(graphPayload, sailsPayload) {
+  try {
+    drawInto("chartGraph", graphPayload);
+    drawInto("chartSails", sailsPayload);
+    ensureStickyClickHandler();
+    fillMeta(metaGraphEl, graphPayload);
+    fillMeta(metaSailsEl, sailsPayload);
+  } catch (err) {
+    metaGraphEl.textContent = String(err.message || err);
+  }
+}
+
+async function fetchJson(url) {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error("HTTP " + res.status);
+  return res.json();
+}
+
+async function refreshStickySailsOnly() {
+  try {
+    const s = clampStickiness(stickinessEl.value);
+    setStickiness(s);
+    const sails = await fetchJson(
+      "/api/demo/visualise_sticky_sails?stickiness=" + encodeURIComponent(s)
+    );
+    drawInto("chartSails", sails);
+    fillMeta(metaSailsEl, sails);
+  } catch (err) {
+    metaSailsEl.textContent = "Failed to load sails: " + err;
+  }
+}
+
 async function refresh() {
   try {
+    if (section === "sticky") {
+      const s = clampStickiness(stickinessEl.value);
+      setStickiness(s);
+      const [graph, sails] = await Promise.all([
+        fetchJson(
+          `/api/sticky?delay_max=${delayMaxEl.value}` +
+            `&delay_step=${delayStepEl.value}`
+        ),
+        fetchJson(
+          "/api/demo/visualise_sticky_sails?stickiness=" + encodeURIComponent(s)
+        ),
+      ]);
+      drawStickyPair(graph, sails);
+      return;
+    }
     let url;
-    let method = "GET";
     if (section === "steppable") {
       url = "/api/steppable/frame?demo=" + encodeURIComponent(steppableDemo());
-    } else if (section === "nonsteppable") {
-      url = "/api/demo/" + demoSelect.value;
     } else {
-      url =
-        `/api/sticky?delay_max=${delayMaxEl.value}` +
-        `&delay_step=${delayStepEl.value}`;
+      url = "/api/demo/" + demoSelect.value;
     }
-    const res = await fetch(url, { method });
-    if (!res.ok) throw new Error("HTTP " + res.status);
-    draw(await res.json());
+    draw(await fetchJson(url));
   } catch (err) {
-    metaEl.textContent = "Failed to load: " + err;
+    const el = section === "sticky" ? metaGraphEl : metaEl;
+    el.textContent = "Failed to load: " + err;
   }
 }
 
@@ -1023,7 +1185,18 @@ delayStepEl.addEventListener("input", () => {
     configTimer = setTimeout(refresh, 40);
   }
 });
+stickinessEl.addEventListener("input", () => {
+  if (section === "sticky") {
+    clearTimeout(configTimer);
+    configTimer = setTimeout(refreshStickySailsOnly, 40);
+  }
+});
+stickinessEl.addEventListener("change", () => {
+  setStickiness(stickinessEl.value);
+  if (section === "sticky") refreshStickySailsOnly();
+});
 syncStickyLabels();
+syncViewPanes();
 
 btnReset.addEventListener("click", async () => {
   try {
@@ -1045,6 +1218,7 @@ btnReset.addEventListener("click", async () => {
 btnResetDefaults.addEventListener("click", () => {
   clearTimeout(configTimer);
   applyDefaultsToForm();
+  setStickiness(DEFAULT_STICKINESS);
   applyConfigAndRefresh();
 });
 
