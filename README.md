@@ -129,13 +129,11 @@ Each demo is an independent visualisation to demonstrate different layers/variat
 | `web_app/demo_web_app.py` | Unified UI: steppable / non-steppable / sticky demos with shared param controls.                                                                                               | See [Unified web app](#unified-web-app) below |
 
 
-
-
-### Web App Setup
+## Web App Setup
 
 Interactive browser UI over the demos above. Same venv and deps as [Quick start](#quick-start) (`flask` / `gunicorn` are in `requirements.txt`).
 
-#### For Local
+### For Local
 
 From the **repo root**:
 
@@ -154,7 +152,7 @@ python -m web_app.demo_web_app
 
 Open **[http://127.0.0.1:5050](http://127.0.0.1:5050)** in Firefox, Chrome, or Safari (use `127.0.0.1`, not `localhost` — on macOS, `localhost:5000` is often AirPlay and returns 403). Stop the server with `Ctrl+C`.
 
-#### For Web Hosted (Render)
+### For Web Hosted (Render)
 
 This repo includes a `render.yaml` Blueprint. On [Render](https://render.com): **New → Blueprint** (or **Web Service**), connect this GitHub repo, and deploy. Free tier sleeps when idle; the first visit after sleep can take ~30–60s.
 
@@ -164,3 +162,10 @@ Manual Web Service settings if you skip the Blueprint:
 - **Start command:** `gunicorn -b 0.0.0.0:$PORT --chdir "src/simplified decision agent" web_app.demo_web_app:app`
 
 Public URL: [https://ainslie-project-partc.onrender.com](https://ainslie-project-partc.onrender.com) (also linked at the top of this README).
+
+
+## Coding Notes
+- Logic between **visual demos ** is currently duplicated: fade / foreseeable_events / sail helpers are copy-pasted across visualise_sails.py, visualizing_main.py, and visualise_sticky_sails.py, then again for Plotly.
+- The web app, namely 'plot_series.py' does not draw from existing visual-demo logic at all; updating visuals on the web app does not carry over to visual demos, and vice versa
+- This will be fixed in future integration when local visual demos are no longer necessary for testing
+  - Central configuration and visual-methods layer will be created as factory for web app plotly layer
