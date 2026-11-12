@@ -10,6 +10,11 @@ this module does not run sticky_graph's module-level matplotlib script).
 
 from sticky_decisions import stick_p_t
 
+# ---------------------------------------------------------------------------
+# Shared styling across demos
+# Colours, horizon fade, label offsets, and plot titles used across frames.
+# ---------------------------------------------------------------------------
+
 COLORS = {
     "snack": "#c44e52",
     "resist": "#4c72b0",
@@ -41,6 +46,11 @@ def _choice_title(prefix, action):
         "text": f"{prefix}  |  <b>Agent chooses {action}</b>",
         "font": {"size": 15, "color": "#1a1d23"},
     }
+
+# ---------------------------------------------------------------------------
+# Sticky-threshold maths (sticky_graph)
+# Critical SS solve and delay colour ramp for the max-SS-resisted family.
+# ---------------------------------------------------------------------------
 
 STICKINESS_MIN, STICKINESS_MAX, N_STICKINESS_POINTS = 0.0, 1.0, 100
 
@@ -81,12 +91,41 @@ def max_ss_resisted(agent, s, delay_SS, delay_LL, reward_LL, horizon, decision_i
     return reward_LL * (V_resist_LL - V_snack_LL) / denom
 
 
+# ---------------------------------------------------------------------------
+# Build (delay, reward) outcomes for each agent/environment type within horizon (including constructing raw outcomes from sticky EVs)
+# ---------------------------------------------------------------------------
+
 def foreseeable_events(agent, environment, state):
     return (
         agent.choice_horizon(state, "snack", environment),
         agent.choice_horizon(state, "resist", environment),
     )
 
+
+def sticky_outcome_events(agent, environment, state):
+    """(delay, reward) SS / LL pairs at each foresight day.
+
+    Same delay structure as StickyHypAgent.day_value / visualise_sticky_sails:
+    outcomes are shifted by t * decision_interval from the current decision.
+    (StickyHypAgent.choice_horizon returns sticky EVs, not raw outcomes.)
+    """
+    horizon = agent.get_horizon(state, environment)
+    interval = environment.decision_interval
+    ss_events = []
+    ll_events = []
+    for t in range(horizon):
+        _, ss_outcomes = environment.simulate(state, "snack")
+        _, ll_outcomes = environment.simulate(state, "resist")
+        for reward, delay in ss_outcomes.values():
+            ss_events.append((delay + t * interval, reward))
+        for reward, delay in ll_outcomes.values():
+            ll_events.append((delay + t * interval, reward))
+    return ss_events, ll_events
+
+
+# ---------------------------------------------------------------------------
+# Sail & aggregate-bar-graph drawing helpers (markers, value labels, shapes)
+# ---------------------------------------------------------------------------
 
 def _value_label(x, y, text, *, color, position="middle left", size=12):
     """Numeral only (no marker). Labels stay fully opaque; sails may be faded."""
@@ -102,7 +141,7 @@ def _value_label(x, y, text, *, color, position="middle left", size=12):
         "hoverinfo": "skip",
     }
 
-
+# visual characteristics of LL sails and tips
 def _ll_sail_trace(
     agent, delay, reward, decision_t, *, sail_color, label=None, show_legend=True
 ):
@@ -183,7 +222,7 @@ def _ll_sail_trace(
     y_max = max(ys) if ys else 0
     return traces, shapes, y_max
 
-
+# visual characteristics of SS sails and tips
 def _ss_sail_traces(agent, ss_events):
     """SS at the current decision is a tip scatter; later SS get sails back to t=0.
 
@@ -262,7 +301,7 @@ def _ss_sail_traces(agent, ss_events):
         )
     return traces, y_max
 
-
+# visual characteristics for aggregate-value scatter point
 def _aggregate_traces(action_values, chosen):
     """Snack/resist aggregates at t=0; chosen action's value numeral is bold."""
     snack_agg = action_values["snack"]
@@ -311,6 +350,10 @@ def _aggregate_traces(action_values, chosen):
     return traces, max(snack_agg, resist_agg)
 
 
+# ---------------------------------------------------------------------------
+# Dual-panel layout settings — Axis assignment, subplot shapes, hour ticks, and evenly spaced callout ys.
+# ---------------------------------------------------------------------------
+
 def _hour_xticks(x_max):
     ticks = list(range(0, x_max + 1, 12))
     labels = [str(t) for t in ticks]
@@ -346,22 +389,41 @@ def _spaced_ys(count, lo, hi):
     return [lo + (hi - lo) * i / (count - 1) for i in range(count)]
 
 
-def _aggregate_stack_panel(agent, ss_events, ll_events, action_values, chosen):
-    """Left-panel Σ bars matching visualise_sails.plot_aggregate_stack.
+# ---------------------------------------------------------------------------
+# Aggregate stack + dual-panel assembler
+# ---------------------------------------------------------------------------
 
-    Returns (traces, annotations, y_peak). Bars use manual `base` stacking;
-    callouts are Plotly annotations with arrows into each segment.
-    """
-    n = len(ll_events)
-    if n == 0:
-        return [], [], 1.0
-
+def _hyp_stack_parts(agent, ss_events, ll_events):
+    """Per-day V_hyp contributions for pure-commitment aggregate bars."""
     snack_parts = [
         (delay, agent.value_function(reward, delay)) for delay, reward in ss_events
     ]
     resist_parts = [
         (delay, agent.value_function(reward, delay)) for delay, reward in ll_events
     ]
+    return snack_parts, resist_parts
+
+
+def _sticky_stack_parts(agent, environment, state):
+    """Per-day sticky EV contributions (sum to StickyHypAgent aggregates)."""
+    interval = environment.decision_interval
+    snack_days = agent.choice_horizon(state, "snack", environment)
+    resist_days = agent.choice_horizon(state, "resist", environment)
+    snack_parts = [(t * interval, ev) for t, ev in snack_days]
+    resist_parts = [(t * interval, ev) for t, ev in resist_days]
+    return snack_parts, resist_parts
+
+
+def _aggregate_stack_panel(snack_parts, resist_parts, action_values, chosen):
+    """Left-panel Σ bars matching visualise_sails.plot_aggregate_stack.
+
+    snack_parts / resist_parts are (hours, contribution) lists that sum to the
+    aggregates. Returns (traces, annotations, y_peak).
+    """
+    n = len(snack_parts)
+    if n == 0:
+        return [], [], 1.0
+
     snack_agg = action_values["snack"]
     resist_agg = action_values["resist"]
 
@@ -369,8 +431,8 @@ def _aggregate_stack_panel(agent, ss_events, ll_events, action_values, chosen):
     bar_w = 0.55
     bottom_s = 0.0
     bottom_r = 0.0
-    ss_rewards = [reward for _, reward in ss_events]
-    min_label = 0.05 * max(ss_rewards) if ss_rewards else 0.0
+    heights = [h for _, h in snack_parts] + [h for _, h in resist_parts]
+    min_label = 0.05 * max(heights) if heights else 0.0
 
     traces = []
     snack_callouts = []
@@ -494,17 +556,27 @@ def _aggregate_stack_panel(agent, ss_events, ll_events, action_values, chosen):
     return traces, annotations, y_peak
 
 
-def sails_frame(agent, environment, state, *, day=None):
-    """
-    Dual panel matching visualise_sails: aggregate stack (left) + sails (right).
-    If day is set, title includes the day number (steppable mode).
-    """
-    ss_events, ll_events = foreseeable_events(agent, environment, state)
-    n = len(ll_events)
-    action, action_values = agent.choose_action(state, environment)
+def _sails_dual_panel(
+    agent,
+    ss_events,
+    ll_events,
+    action,
+    action_values,
+    snack_parts,
+    resist_parts,
+    *,
+    title_prefix,
+    kind="sails",
+    day=None,
+    extra_meta=None,
+):
+    """Shared dual-panel layout: aggregate stack (left) + sails (right).
 
+    Used by sails_frame and sticky_sails_frame.
+    """
+    n = len(ll_events)
     stack_traces, stack_annotations, stack_ymax = _aggregate_stack_panel(
-        agent, ss_events, ll_events, action_values, action
+        snack_parts, resist_parts, action_values, action
     )
 
     sail_traces = []
@@ -546,14 +618,7 @@ def sails_frame(agent, environment, state, *, day=None):
     pad_x = max(LABEL_AGG_OFFSET + 6, x_max * 0.12)
     xticks, xticklabels = _hour_xticks(x_max)
 
-    if day is not None:
-        title = _choice_title(
-            f"Day {day}  |  Choice sails with a horizon of {n} days", action
-        )
-    else:
-        title = _choice_title(
-            f"Choice sails with a horizon of {n} days", action
-        )
+    title = _choice_title(title_prefix, action)
 
     # Stack a bit wider than before; leave headroom above panels for subplot title
     stack_domain = [0.0, 0.3]
@@ -575,8 +640,18 @@ def sails_frame(agent, environment, state, *, day=None):
         }
     ]
 
+    meta = {
+        "day": day,
+        "horizon": n,
+        "choice": action,
+        "action_values": action_values,
+        "ll_ss_gap": action_values["resist"] - action_values["snack"],
+    }
+    if extra_meta:
+        meta.update(extra_meta)
+
     return {
-        "kind": "sails",
+        "kind": kind,
         "traces": stack_traces + sail_traces,
         "layout": {
             "title": title,
@@ -622,14 +697,75 @@ def sails_frame(agent, environment, state, *, day=None):
             "margin": {"l": 60, "r": 24, "t": 72, "b": 90},
             "height": 700,
         },
-        "meta": {
-            "day": day,
-            "horizon": n,
-            "choice": action,
-            "action_values": action_values,
-            "ll_ss_gap": action_values["resist"] - action_values["snack"],
-        },
+        "meta": meta,
     }
+
+
+# ---------------------------------------------------------------------------
+# Public frame builders
+# Entry points used by demo_web_app: sails, sticky sails, bundled aggregate,
+# and the steppable hyperbolic approach curve.
+# ---------------------------------------------------------------------------
+
+def sails_frame(agent, environment, state, *, day=None):
+    """
+    Dual panel matching visualise_sails: aggregate stack (left) + sails (right).
+    If day is set, title includes the day number (steppable mode).
+    """
+    ss_events, ll_events = foreseeable_events(agent, environment, state)
+    n = len(ll_events)
+    action, action_values = agent.choose_action(state, environment)
+    snack_parts, resist_parts = _hyp_stack_parts(agent, ss_events, ll_events)
+
+    if day is not None:
+        title_prefix = f"Day {day}  |  Choice sails with a horizon of {n} days"
+    else:
+        title_prefix = f"Choice sails with a horizon of {n} days"
+
+    return _sails_dual_panel(
+        agent,
+        ss_events,
+        ll_events,
+        action,
+        action_values,
+        snack_parts,
+        resist_parts,
+        title_prefix=title_prefix,
+        kind="sails",
+        day=day,
+    )
+
+
+def sticky_sails_frame(agent, environment, state):
+    """
+    Same dual-panel look as visualise_sails / sails_frame, but aggregates use
+    StickyHypAgent stickiness (visualise_sticky_sails / sticky_decisions).
+
+    Light sails = pure hyperbolic SS / LL trajectories.
+    Opaque t=0 scatters + left Σ bars = sticky EV bundles.
+    Does not include the sticky foresight breakdown (figure 2).
+    """
+    ss_events, ll_events = sticky_outcome_events(agent, environment, state)
+    n = len(ll_events)
+    action, action_values = agent.choose_action(state, environment)
+    snack_parts, resist_parts = _sticky_stack_parts(agent, environment, state)
+    stickiness = getattr(agent, "stickiness", None)
+
+    return _sails_dual_panel(
+        agent,
+        ss_events,
+        ll_events,
+        action,
+        action_values,
+        snack_parts,
+        resist_parts,
+        title_prefix=(
+            f"Sticky sails | s={stickiness} | "
+            f"Choice sails with a horizon of {n} days"
+        ),
+        kind="sticky_sails",
+        extra_meta={"stickiness": stickiness},
+    )
 
 
 def aggregate_frame(agent, environment, state):
@@ -893,6 +1029,11 @@ def hyperbolic_frame(reward, initial_delay, discount_factor, *, elapsed=0):
     }
 
 
+# ---------------------------------------------------------------------------
+# Sticky max-SS-resisted curves
+# Sweep stickiness × LL delay; uses max_ss_resisted / sticky_delay_rgba above.
+# ---------------------------------------------------------------------------
+
 def stickiness_axis():
     step = (STICKINESS_MAX - STICKINESS_MIN) / (N_STICKINESS_POINTS - 1)
     return [STICKINESS_MIN + i * step for i in range(N_STICKINESS_POINTS)]
@@ -938,11 +1079,39 @@ def sticky_curves(agent, environment, state, delay_max, delay_step, reward_LL=No
                 y_peak = v
     ymax = max(8, y_peak * 1.15) if y_peak else 8
 
+    # Default y zoom: one delay-step of context around the current (black) curve
+    focus_delays = {current_delay_LL}
+    if current_delay_LL in delays:
+        idx = delays.index(current_delay_LL)
+        if idx > 0:
+            focus_delays.add(delays[idx - 1])
+        if idx < len(delays) - 1:
+            focus_delays.add(delays[idx + 1])
+    focus_vals = [
+        v
+        for c in curves
+        if c["delay_LL"] in focus_delays
+        for v in c["max_ss"]
+        if v is not None
+    ]
+    if focus_vals:
+        lo, hi = min(focus_vals), max(focus_vals)
+        pad = max((hi - lo) * 0.1, 0.35)
+        y_lo = max(0.0, lo - pad)
+        y_hi = hi + pad
+        if y_hi <= y_lo:
+            y_hi = y_lo + 1.0
+    else:
+        y_lo, y_hi = 0.0, ymax
+
     delay_lo = min(delays) if delays else 0
     delay_hi = max(delays) if delays else 1
     traces = []
-    for c in curves:
+    current_trace_index = None
+    for i, c in enumerate(curves):
         is_current = c["delay_LL"] == current_delay_LL
+        if is_current:
+            current_trace_index = i
         traces.append(
             {
                 "type": "scatter",
@@ -962,7 +1131,16 @@ def sticky_curves(agent, environment, state, delay_max, delay_step, reward_LL=No
                     if is_current
                     else f"LL delay = {c['delay_LL']}h"
                 ),
-                "hovertemplate": "s=%{x:.2f}<br>max SS=%{y:.3f}<extra></extra>",
+                "hovertemplate": (
+                    "s=%{x:.2f}<br>max SS=%{y:.3f}"
+                    + (
+                        "<br><i>Click → set sticky sails s</i>"
+                        if is_current
+                        else ""
+                    )
+                    + "<extra></extra>"
+                ),
+                "meta": {"is_current": is_current},
             }
         )
 
@@ -983,18 +1161,22 @@ def sticky_curves(agent, environment, state, delay_max, delay_step, reward_LL=No
             },
             "yaxis": {
                 "title": "Max SS resisted",
-                "range": [0, ymax],
+                "range": [y_lo, y_hi],
+                "autorange": False,
             },
             "legend": {"orientation": "h", "y": -0.22},
             "margin": {"l": 60, "r": 20, "t": 50, "b": 80},
-            "height": 620,
+            "height": 420,
+            "hovermode": "closest",
         },
         "meta": {
             "stickiness": xs,
             "delays": delays,
             "current_delay_LL": current_delay_LL,
+            "current_trace_index": current_trace_index,
             "reward_LL": reward_LL,
             "horizon": horizon,
             "discount_factor": agent.discount_factor,
+            "y_range": [y_lo, y_hi],
         },
     }

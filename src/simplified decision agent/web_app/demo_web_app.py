@@ -5,18 +5,20 @@ Shared top-level params (rewards, delays, env length, horizon, vision).
 Three sections:
   - Steppable: visualizing_main (env days) | hyperbolic_curve (reward approaching day 0)
   - Non-steppable: visualise_sails | aggregate_sail
-  - Sticky: max SS resisted vs stickiness (sticky_graph)
+  - Sticky: sticky_graph + visualise_sticky_sails (stacked; click current curve sets s)
 
 Math lives in Python (core agent/env + plot_series); the browser draws with Plotly.
 
 Run from the package root:
 
-    python "web app/demo_web_app.py"
+    python -m web_app.demo_web_app
 
 then open http://127.0.0.1:5050
 
 (Port 5050 avoids macOS AirPlay, which often claims :5000 and makes
 Firefox fail on http://localhost:5000 with 403.)
+
+For hosting, bind 0.0.0.0 and honour $PORT (see render.yaml).
 """
 
 import copy
@@ -31,18 +33,25 @@ sys.path.insert(0, str(_WEB_DIR))
 from flask import Flask, jsonify, render_template_string, request
 
 from agents.hyperbolic import HypAgent
+from agents.sticky import StickyHypAgent
 from environments.timeline import TimelineEnvironment
-from main import agent_params, env_params, max_steps as default_max_steps
+from main import (
+    agent_params,
+    env_params,
+    max_steps as default_max_steps,
+    stickiness as default_stickiness,
+)
 import plot_series
 
 # === Defaults (seeded from main.py) ===
 DEFAULT_DELAY_MAX = 24
 DEFAULT_DELAY_STEP = 4
+DEFAULT_STICKINESS = float(default_stickiness)
 
 app = Flask(__name__)
 
-# Mutable live config + steppable session (single local user)
-_config = {
+# Defaults from main.py (immutable seed for "Reset to default")
+_DEFAULT_CONFIG = {
     "ss_value": env_params["rewards"]["SS"]["value"],
     "ss_delay": env_params["rewards"]["SS"]["delay"],
     "ll_value": env_params["rewards"]["LL"]["value"],
@@ -54,6 +63,9 @@ _config = {
     # Same semantics as main.max_steps / visualizing_main: None = no step cap
     "max_steps": default_max_steps,
 }
+
+# Mutable live config + steppable session (single local user)
+_config = copy.deepcopy(_DEFAULT_CONFIG)
 _decision_interval = env_params["decision_interval"]
 _start = env_params["start"]
 
@@ -321,6 +333,17 @@ def api_demo(name):
     environment, agent, state = fresh_snapshot()
     if name == "visualise_sails":
         return jsonify(plot_series.sails_frame(agent, environment, state))
+    if name == "visualise_sticky_sails":
+        s = request.args.get("stickiness", DEFAULT_STICKINESS, type=float)
+        if s is None or s != s:  # None / NaN
+            return jsonify({"error": "stickiness must be a number in [0, 1]"}), 400
+        s = max(0.0, min(1.0, float(s)))
+        sticky_agent = StickyHypAgent(
+            **_build_agent_params(_config), stickiness=s
+        )
+        return jsonify(
+            plot_series.sticky_sails_frame(sticky_agent, environment, state)
+        )
     if name == "aggregate_sail":
         return jsonify(plot_series.aggregate_frame(agent, environment, state))
     return jsonify({"error": f"Unknown demo: {name}"}), 404
@@ -345,6 +368,7 @@ def api_sticky():
 
 @app.route("/")
 def index():
+    # Form fields seed from live config; DEFAULT_CONFIG in JS is always main.py seed
     return render_template_string(
         PAGE,
         ss_value=_config["ss_value"],
@@ -356,8 +380,18 @@ def index():
         vision=_config["vision"],
         discount_factor=_config["discount_factor"],
         max_steps=_config["max_steps"] if _config["max_steps"] is not None else "",
+        default_ss_value=_DEFAULT_CONFIG["ss_value"],
+        default_ss_delay=_DEFAULT_CONFIG["ss_delay"],
+        default_ll_value=_DEFAULT_CONFIG["ll_value"],
+        default_ll_delay=_DEFAULT_CONFIG["ll_delay"],
+        default_length=_DEFAULT_CONFIG["length"],
+        default_horizon=_DEFAULT_CONFIG["horizon"],
+        default_vision=_DEFAULT_CONFIG["vision"],
+        default_discount_factor=_DEFAULT_CONFIG["discount_factor"],
+        default_max_steps=_DEFAULT_CONFIG["max_steps"],
         default_delay_max=DEFAULT_DELAY_MAX,
         default_delay_step=DEFAULT_DELAY_STEP,
+        default_stickiness=DEFAULT_STICKINESS,
     )
 
 
@@ -417,12 +451,27 @@ PAGE = r"""
     box-shadow: 0 1px 2px rgba(26, 29, 35, 0.04);
   }
   .panel-label {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
     font-size: 0.72rem;
     text-transform: uppercase;
     letter-spacing: 0.08em;
     color: var(--muted);
     margin-bottom: 0.65rem;
     font-family: ui-sans-serif, system-ui, sans-serif;
+  }
+  .panel-label button.secondary {
+    text-transform: none;
+    letter-spacing: 0;
+    background: #fff;
+    color: var(--ink);
+    border: 1px solid #c9d0da;
+    padding: 0.35rem 0.75rem;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 0.82rem;
   }
   .params {
     display: grid;
@@ -551,23 +600,38 @@ PAGE = r"""
     min-width: 160px;
   }
   .range-pair span { color: var(--muted); font-size: 0.8rem; }
-  #meta {
+  .meta-line {
     color: var(--muted);
     font-size: 0.85rem;
     font-family: ui-sans-serif, system-ui, sans-serif;
     min-height: 1.2em;
     margin: 0.35rem 0 0.5rem;
   }
-  #meta .choice {
+  .meta-line .choice {
     color: var(--ink);
     font-weight: 800;
     opacity: 1;
   }
-  #chart {
+  .chart-box {
     background: #fff;
     border: 1px solid #d8dde5;
     border-radius: 10px;
     padding: 0.4rem;
+  }
+  #stickyStack {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+  #stickyStack.hidden { display: none; }
+  #singleView.hidden { display: none; }
+  .sticky-plot-label {
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--muted);
+    font-family: ui-sans-serif, system-ui, sans-serif;
+    margin: 0 0 0.2rem;
   }
 </style>
 </head>
@@ -577,7 +641,10 @@ PAGE = r"""
   <p class="subtitle">Shared parameters · switch between steppable, static, and sticky views</p>
 
   <div class="panel">
-    <div class="panel-label">Main parameters</div>
+    <div class="panel-label">
+      <span>Main parameters</span>
+      <button type="button" class="secondary" id="btnResetDefaults">Reset to default</button>
+    </div>
     <div class="params">
       <label>SS value
         <input type="number" id="ssValue" value="{{ ss_value }}" min="0" step="0.5"/>
@@ -655,25 +722,58 @@ PAGE = r"""
         <span>LL delay step: <strong id="delayStepVal">{{ default_delay_step }}h</strong></span>
         <input type="range" id="delayStep" min="1" max="12" step="1" value="{{ default_delay_step }}"/>
       </div>
+      <label style="min-width:120px;">Stickiness s
+        <input type="number" id="stickiness" value="{{ default_stickiness }}" min="0" max="1" step="0.01"/>
+      </label>
     </div>
 
-    <div id="meta"></div>
-    <div id="chart"></div>
+    <div id="singleView">
+      <div id="meta" class="meta-line"></div>
+      <div id="chart" class="chart-box"></div>
+    </div>
+    <div id="stickyStack" class="hidden">
+      <div>
+        <p class="sticky-plot-label">Sticky graph · click black (current) curve to set s</p>
+        <div id="metaGraph" class="meta-line"></div>
+        <div id="chartGraph" class="chart-box"></div>
+      </div>
+      <div>
+        <p class="sticky-plot-label">Sticky sails at s</p>
+        <div id="metaSails" class="meta-line"></div>
+        <div id="chartSails" class="chart-box"></div>
+      </div>
+    </div>
   </div>
 </div>
 
 <script>
-const DEFAULT_VISION = {{ vision|tojson }};
+const DEFAULT_CONFIG = {
+  ss_value: {{ default_ss_value|tojson }},
+  ss_delay: {{ default_ss_delay|tojson }},
+  ll_value: {{ default_ll_value|tojson }},
+  ll_delay: {{ default_ll_delay|tojson }},
+  length: {{ default_length|tojson }},
+  horizon: {{ default_horizon|tojson }},
+  discount_factor: {{ default_discount_factor|tojson }},
+  max_steps: {{ default_max_steps|tojson }},
+  vision: {{ default_vision|tojson }},
+};
+const DEFAULT_VISION = DEFAULT_CONFIG.vision;
 const DEFAULT_DELAY_MAX = {{ default_delay_max }};
 const DEFAULT_DELAY_STEP = {{ default_delay_step }};
+const DEFAULT_STICKINESS = {{ default_stickiness|tojson }};
 
 let vision = DEFAULT_VISION;
 let section = "steppable";
-let plotted = false;
+let stickyClickBound = false;
 let configTimer = null;
 let finished = false;
 
 const metaEl = document.getElementById("meta");
+const metaGraphEl = document.getElementById("metaGraph");
+const metaSailsEl = document.getElementById("metaSails");
+const singleViewEl = document.getElementById("singleView");
+const stickyStackEl = document.getElementById("stickyStack");
 const ssValueEl = document.getElementById("ssValue");
 const ssDelayEl = document.getElementById("ssDelay");
 const llValueEl = document.getElementById("llValue");
@@ -688,9 +788,29 @@ const demoSelect = document.getElementById("demoSelect");
 const steppableDemoSelect = document.getElementById("steppableDemoSelect");
 const delayMaxEl = document.getElementById("delayMax");
 const delayStepEl = document.getElementById("delayStep");
+const stickinessEl = document.getElementById("stickiness");
 const btnStep = document.getElementById("btnStep");
 const btnReset = document.getElementById("btnReset");
+const btnResetDefaults = document.getElementById("btnResetDefaults");
 const stepHint = document.getElementById("stepHint");
+
+function optionalToInput(value) {
+  return value == null || value === "" ? "" : String(value);
+}
+
+function applyDefaultsToForm() {
+  ssValueEl.value = DEFAULT_CONFIG.ss_value;
+  ssDelayEl.value = DEFAULT_CONFIG.ss_delay;
+  llValueEl.value = DEFAULT_CONFIG.ll_value;
+  llDelayEl.value = DEFAULT_CONFIG.ll_delay;
+  lengthEl.value = optionalToInput(DEFAULT_CONFIG.length);
+  horizonEl.value = optionalToInput(DEFAULT_CONFIG.horizon);
+  discountFactorEl.value = DEFAULT_CONFIG.discount_factor;
+  maxStepsEl.value = optionalToInput(DEFAULT_CONFIG.max_steps);
+  vision = DEFAULT_CONFIG.vision;
+  syncVisionButtons();
+  clearConfigError();
+}
 
 function steppableDemo() {
   return steppableDemoSelect.value || "visualizing_main";
@@ -754,6 +874,12 @@ function showConfigError(message, fields) {
   maxStepsEl.classList.toggle("field-error", f.includes("max_steps"));
 }
 
+function syncViewPanes() {
+  const sticky = section === "sticky";
+  singleViewEl.classList.toggle("hidden", sticky);
+  stickyStackEl.classList.toggle("hidden", !sticky);
+}
+
 function setSection(name) {
   section = name;
   document.querySelectorAll(".tabs button").forEach((b) => {
@@ -762,6 +888,7 @@ function setSection(name) {
   document.getElementById("chromeSteppable").classList.toggle("hidden", name !== "steppable");
   document.getElementById("chromeNon").classList.toggle("hidden", name !== "nonsteppable");
   document.getElementById("chromeSticky").classList.toggle("hidden", name !== "sticky");
+  syncViewPanes();
   refresh();
 }
 
@@ -809,11 +936,28 @@ async function pushConfig() {
   btnStep.disabled = false;
 }
 
-function draw(payload) {
-  if (typeof Plotly === "undefined") {
-    metaEl.textContent = "Plotly failed to load (CDN blocked?). Refresh or check network.";
-    return;
-  }
+function clampStickiness(raw) {
+  let s = Number(raw);
+  if (!Number.isFinite(s)) s = DEFAULT_STICKINESS;
+  s = Math.max(0, Math.min(1, s));
+  return Math.round(s * 100) / 100;
+}
+
+function setStickiness(raw) {
+  stickinessEl.value = String(clampStickiness(raw));
+}
+
+function plotOpts() {
+  return {
+    responsive: true,
+    displayModeBar: true,
+    displaylogo: false,
+    scrollZoom: false,
+    modeBarButtonsToRemove: ["lasso2d", "select2d"],
+  };
+}
+
+function baseLayout(payload, uirevision) {
   const layout = Object.assign(
     {
       font: { family: "Iowan Old Style, Palatino Linotype, Georgia, serif", size: 13 },
@@ -822,80 +966,161 @@ function draw(payload) {
     },
     payload.layout || {}
   );
-  // Hyperbolic supplies its own uirevision so axes stay locked while stepping
   if (!layout.uirevision) {
-    layout.uirevision =
-      section +
-      "|" +
-      JSON.stringify(currentConfig()) +
-      "|" +
-      (section === "steppable" ? steppableDemo() : demoSelect.value || "");
+    layout.uirevision = uirevision;
   }
-  const opts = {
-    responsive: true,
-    displayModeBar: true,
-    displaylogo: false,
-    scrollZoom: false,
-    modeBarButtonsToRemove: ["lasso2d", "select2d"],
-  };
-  if (!plotted) {
-    Plotly.newPlot("chart", payload.traces, layout, opts);
-    plotted = true;
-  } else {
-    Plotly.react("chart", payload.traces, layout, opts);
-  }
+  return layout;
+}
 
+function fillMeta(el, payload) {
   const m = payload.meta || {};
   if (payload.kind === "sticky") {
-    metaEl.textContent =
+    el.textContent =
       `delays = [${(m.delays || []).join(", ")}]h · LL = ${m.reward_LL} · ` +
       `horizon = ${m.horizon} · discount_factor = ${m.discount_factor}`;
   } else if (m.action_values) {
     const av = m.action_values;
     const dayBit = m.day != null ? `Day ${m.day} · ` : "";
+    const stickyBit =
+      m.stickiness != null ? `s = ${Number(m.stickiness).toFixed(2)} · ` : "";
     const doneBit = m.finished ? " · finished" : "";
-    metaEl.innerHTML =
+    el.innerHTML =
       dayBit +
+      stickyBit +
       `<span class="choice">Agent chooses ${m.choice}</span>` +
       ` · snack = ${av.snack.toFixed(4)} · resist = ${av.resist.toFixed(4)}` +
       doneBit;
   } else if (payload.kind === "hyperbolic_curve") {
     const doneBit = m.finished ? " · finished" : "";
-    metaEl.innerHTML =
+    el.innerHTML =
       `elapsed = ${m.elapsed}h · remaining = ${m.remaining}h · ` +
       `<span class="choice">V(day 0) = ${m.perceived.toFixed(4)}</span>` +
       ` · k = ${m.discount_factor}` +
       doneBit;
   } else if (m.perceived != null) {
-    metaEl.textContent = `perceived at t=0 = ${m.perceived.toFixed(4)}`;
+    el.textContent = `perceived at t=0 = ${m.perceived.toFixed(4)}`;
   } else {
-    metaEl.textContent = "";
+    el.textContent = "";
   }
-
   if (m.finished != null) {
     finished = !!m.finished;
     btnStep.disabled = finished;
   }
 }
 
+function ensureStickyClickHandler() {
+  if (stickyClickBound) return;
+  const chart = document.getElementById("chartGraph");
+  chart.on("plotly_click", (ev) => {
+    if (section !== "sticky") return;
+    const pt = ev.points && ev.points[0];
+    if (!pt) return;
+    const isCurrent =
+      (pt.data && pt.data.meta && pt.data.meta.is_current) ||
+      String((pt.data && pt.data.name) || "").includes("(current)");
+    if (!isCurrent) return;
+    setStickiness(pt.x);
+    refreshStickySailsOnly();
+  });
+  stickyClickBound = true;
+}
+
+const plotReady = { chart: false, chartGraph: false, chartSails: false };
+
+function drawInto(divId, payload) {
+  if (typeof Plotly === "undefined") {
+    throw new Error("Plotly failed to load (CDN blocked?). Refresh or check network.");
+  }
+  const uirevision =
+    divId +
+    "|" +
+    JSON.stringify(currentConfig()) +
+    "|" +
+    (section === "steppable"
+      ? steppableDemo()
+      : section === "sticky"
+        ? divId === "chartSails"
+          ? "sticky-sails|" + stickinessEl.value
+          : "sticky-graph|" + delayMaxEl.value + "|" + delayStepEl.value
+        : demoSelect.value || "");
+  const layout = baseLayout(payload, uirevision);
+  const opts = plotOpts();
+  if (!plotReady[divId]) {
+    Plotly.newPlot(divId, payload.traces, layout, opts);
+    plotReady[divId] = true;
+  } else {
+    Plotly.react(divId, payload.traces, layout, opts);
+  }
+}
+
+function draw(payload) {
+  try {
+    drawInto("chart", payload);
+    fillMeta(metaEl, payload);
+  } catch (err) {
+    metaEl.textContent = String(err.message || err);
+  }
+}
+
+function drawStickyPair(graphPayload, sailsPayload) {
+  try {
+    drawInto("chartGraph", graphPayload);
+    drawInto("chartSails", sailsPayload);
+    ensureStickyClickHandler();
+    fillMeta(metaGraphEl, graphPayload);
+    fillMeta(metaSailsEl, sailsPayload);
+  } catch (err) {
+    metaGraphEl.textContent = String(err.message || err);
+  }
+}
+
+async function fetchJson(url) {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error("HTTP " + res.status);
+  return res.json();
+}
+
+async function refreshStickySailsOnly() {
+  try {
+    const s = clampStickiness(stickinessEl.value);
+    setStickiness(s);
+    const sails = await fetchJson(
+      "/api/demo/visualise_sticky_sails?stickiness=" + encodeURIComponent(s)
+    );
+    drawInto("chartSails", sails);
+    fillMeta(metaSailsEl, sails);
+  } catch (err) {
+    metaSailsEl.textContent = "Failed to load sails: " + err;
+  }
+}
+
 async function refresh() {
   try {
+    if (section === "sticky") {
+      const s = clampStickiness(stickinessEl.value);
+      setStickiness(s);
+      const [graph, sails] = await Promise.all([
+        fetchJson(
+          `/api/sticky?delay_max=${delayMaxEl.value}` +
+            `&delay_step=${delayStepEl.value}`
+        ),
+        fetchJson(
+          "/api/demo/visualise_sticky_sails?stickiness=" + encodeURIComponent(s)
+        ),
+      ]);
+      drawStickyPair(graph, sails);
+      return;
+    }
     let url;
-    let method = "GET";
     if (section === "steppable") {
       url = "/api/steppable/frame?demo=" + encodeURIComponent(steppableDemo());
-    } else if (section === "nonsteppable") {
-      url = "/api/demo/" + demoSelect.value;
     } else {
-      url =
-        `/api/sticky?delay_max=${delayMaxEl.value}` +
-        `&delay_step=${delayStepEl.value}`;
+      url = "/api/demo/" + demoSelect.value;
     }
-    const res = await fetch(url, { method });
-    if (!res.ok) throw new Error("HTTP " + res.status);
-    draw(await res.json());
+    draw(await fetchJson(url));
   } catch (err) {
-    metaEl.textContent = "Failed to load: " + err;
+    const el = section === "sticky" ? metaGraphEl : metaEl;
+    el.textContent = "Failed to load: " + err;
   }
 }
 
@@ -960,7 +1185,18 @@ delayStepEl.addEventListener("input", () => {
     configTimer = setTimeout(refresh, 40);
   }
 });
+stickinessEl.addEventListener("input", () => {
+  if (section === "sticky") {
+    clearTimeout(configTimer);
+    configTimer = setTimeout(refreshStickySailsOnly, 40);
+  }
+});
+stickinessEl.addEventListener("change", () => {
+  setStickiness(stickinessEl.value);
+  if (section === "sticky") refreshStickySailsOnly();
+});
 syncStickyLabels();
+syncViewPanes();
 
 btnReset.addEventListener("click", async () => {
   try {
@@ -977,6 +1213,13 @@ btnReset.addEventListener("click", async () => {
   } catch (err) {
     if (!err.configError) metaEl.textContent = "Reset failed: " + err;
   }
+});
+
+btnResetDefaults.addEventListener("click", () => {
+  clearTimeout(configTimer);
+  applyDefaultsToForm();
+  setStickiness(DEFAULT_STICKINESS);
+  applyConfigAndRefresh();
 });
 
 btnStep.addEventListener("click", async () => {
@@ -1001,16 +1244,20 @@ refresh();
 
 
 if __name__ == "__main__":
+    import os
     import webbrowser
 
-    # 5050: macOS AirPlay Receiver often binds :5000; Firefox's localhost
-    # lookup can hit AirTunes (403) instead of Flask.
-    host, port = "127.0.0.1", 5050
-    url = f"http://{host}:{port}"
-    print(f"Serving unified visual demos at {url}")
-    print("Open that exact URL in Firefox/Chrome/Safari (use 127.0.0.1, not localhost).")
-    try:
-        webbrowser.open(url)
-    except Exception:
-        pass
+    # Local default 5050: macOS AirPlay often binds :5000.
+    # Cloud hosts (Render, etc.) inject PORT and require 0.0.0.0.
+    port = int(os.environ.get("PORT", "5050"))
+    host = os.environ.get("HOST") or (
+        "0.0.0.0" if "PORT" in os.environ else "127.0.0.1"
+    )
+    print(f"Serving unified visual demos on {host}:{port}")
+    if host in ("127.0.0.1", "localhost"):
+        print("Open http://127.0.0.1:%s (use 127.0.0.1, not localhost)." % port)
+        try:
+            webbrowser.open(f"http://127.0.0.1:{port}")
+        except Exception:
+            pass
     app.run(debug=False, host=host, port=port, use_reloader=False)
