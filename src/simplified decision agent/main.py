@@ -1,35 +1,30 @@
 """
 Run a hyperbolic agent on the memoryless SS/LL timeline.
-Edit the params below, then run from this directory:
-
-    python main.py
-
+Edit env params below; agent init defaults live in agents/agent_configs.py.
 Units are hours. One choice per day (decision_interval=24).
 LL delay is hours after the choice (e.g. 12 ≈ next morning).
 
-To visualise value curves at each decision point:
+Run from this directory:
 
-    python -m visual_demos.visualize_main
+    python main.py
+
 """
 
+from agents.agent_configs import agent_params
 from agents.hyperbolic import HypAgent
 from environments.timeline import TimelineEnvironment
 
-# === Params ===
+# === Env params (agent init: agents/agent_configs.py) ===
 env_params = {
-    "length": 240,  # Time in hours; or None for infinite
+    "length": None,  # Time in hours; or None for infinite
     "start": 0,
     "decision_interval": 24,  # hours between decisions
     "rewards": {
         "SS": {"value": 3, "delay": 0},   # snack now
         "LL": {"value": 20, "delay": 12},  # hours after choice until weigh-in
     },
-}
-
-agent_params = {
-    "discount_factor": 0.6,
-    "vision": "long",  # "short" or "long"
-    "horizon": 10,  # max # of decisions to plan; capped by remaining env decisions, includes the current day (min. 1)
+    # StickyTimelineEnvironment only (generative s_true; never learned)
+    "true_stickiness": 0.8,
 }
 
 max_steps = None  # used when env length is None to cap this run as a safety stop. Should always be none for steppable infinite environments.
