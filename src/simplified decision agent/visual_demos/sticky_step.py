@@ -8,7 +8,8 @@ Environment: StickyTimelineEnvironment rolls stick/switch from true_stickiness.
 Agent intent is logged; realized action follows the roll (day 0 = free intent).
 Belief updates from stick/switch bits only; s_true never changes.
 
-When learn_stickiness is True, StickyHypAgent foresight uses belief.mean() as ŝ.
+Environment owns the beta_belief and ŝ = beta_belief.mean() (always updates).
+learn_stickiness only toggles whether agent stick_p_t reads env ŝ vs fixed stickiness.
 
 Run from the package root:
 
@@ -21,7 +22,8 @@ import matplotlib.pyplot as plt
 import sys
 from pathlib import Path
 
-# Debugger / direct run put visual_demos/ on sys.path; package root is one up
+# Debugger / direct run put visual_demos/ on sys.
+# path; package root is one up
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 try:
@@ -29,19 +31,18 @@ try:
 except Exception:
     pass
 
-from agents.sticky import StickyHypAgent
+from agents.agent_configs import sticky_params
+from agents.sticky_agent import StickyHypAgent
 from environments.sticky_timeline import StickyTimelineEnvironment
-from learning.bayesian_stickiness import BayesianStickinessBelief
-from main import agent_params, env_params, max_steps
+from learning.bayesian_stickiness import BayesianStickinessBelief as BayesUpdate
+from main import env_params, max_steps
 
-# === StickyHypAgent / Bayesian env params (edit here) ===
-stickiness = 0.6          # initial fixed ŝ when learn_stickiness is False
-true_stickiness = 0.8     # generative s_true (never updated by learning)
-learn_stickiness = True   # True => foresight uses belief.mean() as ŝ
+# Agent sticky knobs: agents/agent_configs.py; s_true: main.env_params.
+true_stickiness = env_params["true_stickiness"]
+learn_stickiness = sticky_params["learn_stickiness"]
 prior_alpha = 1.0         # Beta prior on s
 prior_beta = 1.0
 seed = 0
-# Shared timeline / hyperbolic knobs still come from main.env_params / main.agent_params.
 
 COLORS = {
     "snack": "#c44e52",
@@ -203,10 +204,10 @@ def plot_aggregates(axes, action_values, chosen):
     return max(snack_agg, resist_agg)
 
 
-def plot_belief(ax_belief, belief, true_s, perceived_s):
+def plot_belief(ax_belief, beta_belief, true_s, perceived_s):
     """Beta posterior density with true and perceived stickiness markers."""
     ax_belief.clear()
-    xs, dens = belief.pdf_grid(n=251)
+    xs, dens = beta_belief.pdf_grid(n=251)
     ax_belief.plot(xs, dens, color=COLORS["belief"], lw=2.0, label="Beta posterior")
     ax_belief.fill_between(xs, dens, color=COLORS["belief"], alpha=0.18)
 
@@ -231,17 +232,19 @@ def plot_belief(ax_belief, belief, true_s, perceived_s):
     ax_belief.set_xlabel("Stickiness s")
     ax_belief.set_ylabel("Density")
     ax_belief.set_title(
-        f"Belief  α={belief.alpha:.1f}  β={belief.beta:.1f}  |  "
-        f"sticks={belief.n_stick()}  switches={belief.n_switch()}"
+        f"Beta Distribution \n" 
+        f"α={beta_belief.alpha:.1f} | β={beta_belief.beta:.1f}\n"
+        f"sticks={beta_belief.n_stick()} | switches={beta_belief.n_switch()}"
     )
     ax_belief.legend(loc="upper right", fontsize=9)
 
 
-def draw_frame(ax_sails, ax_belief, agent, environment, belief, state, steps):
-    """Redraw sails + belief from the current decision state."""
+def draw_frame(ax_sails, ax_belief, agent, environment, beta_belief, state, steps):
+    """Redraw sails + beta_belief from the current decision state."""
     ss_events, ll_events = outcome_events(agent, environment, state)
     n = agent.get_horizon(state, environment)
-    s_hat = agent.perceived_stickiness()
+    s_hat = environment.s_hat()
+    perceived_s = agent.perceived_stickiness(environment)
 
     intent, action_values = agent.choose_action(state, environment)
 
@@ -280,23 +283,24 @@ def draw_frame(ax_sails, ax_belief, agent, environment, belief, state, steps):
     ax_sails.set_xlabel("Hours from now")
     ax_sails.set_ylabel("Perceived value")
     ax_sails.set_title(
-        f"Day {steps}  |  ŝ={s_hat:.3f}  s_true={true_stickiness}  |  "
-        f"horizon={n}  |  intent={intent}"
+        f"Day {steps}  | Perceived stickiness={perceived_s:.3f} | True stickiness={true_stickiness}\n"
+        f"horizon={n}  |  Agent would choose {intent}"
     )
     ax_sails.legend(loc="upper right")
 
-    plot_belief(ax_belief, belief, true_stickiness, s_hat)
+    plot_belief(ax_belief, beta_belief, true_stickiness, s_hat)
 
     snack_days = agent.choice_horizon(state, "snack", environment)
     resist_days = agent.choice_horizon(state, "resist", environment)
 
     print(
         f"Day {steps}  |  Horizon = {n}  ŝ = {s_hat:.4f}  "
+        f"perceived_s = {perceived_s:.4f}  "
         f"s_true = {true_stickiness}  learn={learn_stickiness}"
     )
     print(
-        f"  belief α={belief.alpha:.1f} β={belief.beta:.1f}  "
-        f"sticks={belief.n_stick()} switches={belief.n_switch()}"
+        f"  beta_belief α={beta_belief.alpha:.1f} β={beta_belief.beta:.1f}  "
+        f"sticks={beta_belief.n_stick()} switches={beta_belief.n_switch()}"
     )
     print()
     print(
@@ -309,7 +313,8 @@ def draw_frame(ax_sails, ax_belief, agent, environment, belief, state, steps):
         v_s = agent.day_value(state, "snack", environment, t)
         v_r = agent.day_value(state, "resist", environment, t)
         print(
-            f"{hours:6d}  {agent.stick_p_t(t):10.4f}  {v_s:14.4f}  {v_r:14.4f}"
+            f"{hours:6d}  {agent.stick_p_t(t, environment):10.4f}  "
+            f"{v_s:14.4f}  {v_r:14.4f}"
         )
     print()
     print(
@@ -334,19 +339,13 @@ def draw_frame(ax_sails, ax_belief, agent, environment, belief, state, steps):
 
 
 def main():
-    belief = BayesianStickinessBelief(alpha=prior_alpha, beta=prior_beta)
     environment = StickyTimelineEnvironment(
         **env_params,
-        true_stickiness=true_stickiness,
-        belief=belief,
+        beta_belief=BayesUpdate(alpha=prior_alpha, beta=prior_beta), # create Beta posterior object
         seed=seed,
     )
-    agent = StickyHypAgent(
-        **agent_params,
-        stickiness=stickiness,
-        stickiness_belief=belief,
-        learn_stickiness=learn_stickiness,
-    )
+    beta_belief = environment.beta_belief # local reference; prior mean ŝ = 0.5
+    agent = StickyHypAgent(**sticky_params) # agent initialised with perceived
     state = environment.reset()
 
     finished = False
@@ -362,13 +361,13 @@ def main():
     while not finished and (max_steps is None or steps < max_steps):
         steps += 1
         intent, ll_ss_gap = draw_frame(
-            ax_sails, ax_belief, agent, environment, belief, state, steps
+            ax_sails, ax_belief, agent, environment, beta_belief, state, steps
         )
         ll_ss_gaps.append(ll_ss_gap)
         state, finished, info = environment.step(intent)
         print(
             f"  realized={info['realized']}  stuck={info['stuck']}  "
-            f"ŝ_after={info['perceived_mean']}"
+            f"New ŝ={info['s_hat']}"
         )
         print()
         plt.tight_layout()

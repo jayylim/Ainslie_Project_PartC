@@ -38,17 +38,17 @@ class BayesianStickinessBelief:
             self.beta += 1.0
 
     def mean(self):
-        """Posterior mean E[s | data] = alpha / (alpha + beta)."""
+        # computes the posterior mean E[s | data] = alpha / (alpha + beta)
         return self.alpha / (self.alpha + self.beta)
 
     def mode(self):
-        """Posterior mode when alpha, beta > 1; else falls back to mean."""
+        # computes the posterior mode when alpha, beta > 1; else falls back to mean
         if self.alpha > 1.0 and self.beta > 1.0:
             return (self.alpha - 1.0) / (self.alpha + self.beta - 2.0)
         return self.mean()
 
     def n_obs(self):
-        """Number of stick/switch observations since the prior."""
+        # counts the total number of stick/switch observations since the prior
         return int(round((self.alpha - self.alpha0) + (self.beta - self.beta0)))
 
     def n_stick(self):
@@ -61,8 +61,8 @@ class BayesianStickinessBelief:
     def _log_beta(a, b):
         return math.lgamma(a) + math.lgamma(b) - math.lgamma(a + b)
 
+    # probability density function of the beta distribution
     def pdf(self, x):
-        """Beta(alpha, beta) density at scalar x in (0, 1)."""
         if x <= 0.0 or x >= 1.0:
             # Endpoints: infinite if param < 1, finite/zero otherwise — treat as 0 for plotting
             if x == 0.0 and self.alpha < 1.0:

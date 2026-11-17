@@ -21,11 +21,7 @@ OTHER = {"snack": "resist", "resist": "snack"}
 
 
 class StickyTimelineEnvironment(TimelineEnvironment):
-    def __init__(self, rewards, length=None, start=0, decision_interval=24,
-        true_stickiness=0.8,
-        belief=None,
-        seed=None,
-    ):
+    def __init__(self, rewards, length=None, start=0, decision_interval=24, true_stickiness=0.8, beta_belief=None, seed=None,):
         super().__init__( # using timeline environment initialisations
             rewards=rewards,
             length=length,
@@ -36,7 +32,7 @@ class StickyTimelineEnvironment(TimelineEnvironment):
             raise ValueError("true_stickiness must be in [0, 1]")
         # new parameters for learned stickiness timeline
         self.true_stickiness = float(true_stickiness)
-        self.belief = belief  # perceived stickiness | None; never mutates s_true
+        self.beta_belief = beta_belief  # Beta posterior over s | None; never mutates s_true
         self.seed = seed
         self.rng = random.Random(seed)
 
@@ -45,6 +41,12 @@ class StickyTimelineEnvironment(TimelineEnvironment):
         self.intent_history = []
         self.action_history = []
 
+    def s_hat(self):
+        """Posterior mean ŝ = E[s | data] from the attached beta_belief, or None."""
+        if self.beta_belief is None:
+            return None
+        return self.beta_belief.mean()
+
     def reset(self):
         self.time_step = self.start
         self.last_action = None
@@ -52,8 +54,8 @@ class StickyTimelineEnvironment(TimelineEnvironment):
         self.intent_history = []
         self.action_history = []
         self.rng = random.Random(self.seed)
-        if self.belief is not None:
-            self.belief.reset()
+        if self.beta_belief is not None:
+            self.beta_belief.reset()
         return self.time_step
 
     def _opposite(self, action):
@@ -65,7 +67,7 @@ class StickyTimelineEnvironment(TimelineEnvironment):
     def step(self, intent):
         """
         Returns (next_state, finished, info) where info has:
-          intent, realized, stuck (None on first choice)
+          intent, realized, stuck (None on first choice), s_hat
         """
         if intent not in self.action_map:
             raise ValueError(f"Unknown intent {intent!r}")
@@ -87,8 +89,8 @@ class StickyTimelineEnvironment(TimelineEnvironment):
         self.action_history.append(realized)
         if stuck is not None:
             self.stick_history.append(stuck)
-            if self.belief is not None:
-                self.belief.update(stuck)
+            if self.beta_belief is not None:
+                self.beta_belief.update(stuck)
 
         self.last_action = realized
         self.time_step += self.decision_interval
@@ -103,8 +105,6 @@ class StickyTimelineEnvironment(TimelineEnvironment):
             "realized": realized,
             "stuck": stuck,
             "true_stickiness": self.true_stickiness,
-            "perceived_mean": (
-                None if self.belief is None else self.belief.mean()
-            ),
+            "s_hat": self.s_hat(),
         }
         return self.time_step, finished, info
