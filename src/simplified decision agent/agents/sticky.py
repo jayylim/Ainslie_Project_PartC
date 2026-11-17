@@ -9,17 +9,40 @@ stickiness s = P(a_{t+1} = a_t) instead of assuming pure commitment:
 
 When s = 1, long-vision values match HypAgent (pure commitment).
 Acts only through the environment interface (simulate / get_actions).
+
+Optional Bayesian learning:
+  Pass stickiness_belief=BayesianStickinessBelief(...) and learn_stickiness=True
+  so foresight uses perceived_stickiness() = posterior mean. This never writes
+  an environment's true_stickiness.
 """
 
 
 class StickyHypAgent:
     def __init__(
-        self, discount_factor=0.8, vision="short", horizon=None, stickiness=1.0
+        self,
+        discount_factor=0.8,
+        vision="short",
+        horizon=None,
+        stickiness=1.0,
+        stickiness_belief=None,
+        learn_stickiness=False,
     ):
         self.discount_factor = discount_factor
         self.vision = vision  # "short" or "long"
         self.horizon = horizon  # max # of decisions to plan; None => all remaining if finite
-        self.stickiness = stickiness  # s in [0, 1]; P(next action equals current)
+        self.stickiness = stickiness  # fixed ŝ when not learning
+        self.stickiness_belief = stickiness_belief
+        self.learn_stickiness = bool(learn_stickiness)
+        if self.learn_stickiness and self.stickiness_belief is None:
+            raise ValueError(
+                "learn_stickiness=True requires stickiness_belief"
+            )
+
+    def perceived_stickiness(self):
+        """ŝ used in foresight: posterior mean when learning, else fixed stickiness."""
+        if self.learn_stickiness and self.stickiness_belief is not None:
+            return self.stickiness_belief.mean()
+        return self.stickiness
 
     def value_function(self, reward, distance):
         return reward / (1 + self.discount_factor * distance)  # hyperbolic discounting formula
@@ -53,8 +76,8 @@ class StickyHypAgent:
         raise ValueError("Horizon must be set as timeline is infinite")
 
     def stick_p_t(self, t):
-        """P(a_t = a | a_0 = a) = 1/2 * (1 + (2s - 1)^t)."""
-        s = self.stickiness
+        """P(a_t = a | a_0 = a) = 1/2 * (1 + (2s - 1)^t) under perceived ŝ."""
+        s = self.perceived_stickiness()
         return 0.5 * (1 + (2 * s - 1) ** t)
 
     def _other_action(self, action, environment, state):

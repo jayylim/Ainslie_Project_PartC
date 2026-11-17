@@ -49,8 +49,9 @@ from agents.hyperbolic import HypAgent
 from environments.timeline import TimelineEnvironment
 from main import agent_params, env_params
 
-# === Stickiness s (edit here) ===
-s = 0.8  # in [0, 1]; s = 1 recovers pure long-vision bundling
+# === StickyHypAgent-related params (edit here) ===
+s = 0.8  # perceived stickiness in [0, 1]; s = 1 recovers pure long-vision bundling
+# Shared timeline / hyperbolic knobs still come from main.env_params / main.agent_params.
 
 OTHER = {"snack": "resist", "resist": "snack"}  # b given a
 

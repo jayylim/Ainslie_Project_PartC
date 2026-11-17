@@ -39,14 +39,13 @@ from main import (
     agent_params,
     env_params,
     max_steps as default_max_steps,
-    stickiness as default_stickiness,
 )
 import plot_series
 
-# === Defaults (seeded from main.py) ===
+# === Defaults (seeded from main.py; stickiness is sticky-demo local) ===
 DEFAULT_DELAY_MAX = 24
 DEFAULT_DELAY_STEP = 4
-DEFAULT_STICKINESS = float(default_stickiness)
+DEFAULT_STICKINESS = 0.6
 
 app = Flask(__name__)
 

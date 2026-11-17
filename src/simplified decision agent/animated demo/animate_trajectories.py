@@ -33,7 +33,10 @@ from matplotlib.patches import Rectangle
 
 from agents.sticky import StickyHypAgent
 from environments.timeline import TimelineEnvironment
-from main import agent_params, env_params, stickiness
+from main import agent_params, env_params
+
+# === StickyHypAgent-related params (edit here) ===
+stickiness = 0.6
 
 # --- Demo knobs -----------------------------------------------------------
 # Matplotlib can drop frames when INTERVAL_MS is tiny; update() catch-up

@@ -35,7 +35,12 @@ except Exception:
 
 from agents.sticky import StickyHypAgent
 from environments.timeline import TimelineEnvironment
-from main import agent_params, env_params, stickiness
+from main import agent_params, env_params
+
+# === StickyHypAgent-related params (edit here) ===
+stickiness = 0.6  # fixed perceived ŝ; s=1 matches HypAgent long vision
+learn_stickiness = False  # snapshot demo: no Bayesian updates
+# Shared timeline / hyperbolic knobs still come from main.env_params / main.agent_params.
 
 # --- Optional sticky foresight panels (easy to reject) -------------------
 # Set False, or delete this flag + the call in main(), and delete
@@ -213,7 +218,11 @@ def plot_aggregates(axes, action_values, chosen):
 
 def main():
     environment = TimelineEnvironment(**env_params)
-    agent = StickyHypAgent(**agent_params, stickiness=stickiness)
+    agent = StickyHypAgent(
+        **agent_params,
+        stickiness=stickiness,
+        learn_stickiness=learn_stickiness,
+    )
     state = environment.reset()
 
     ss_events, ll_events = outcome_events(agent, environment, state)

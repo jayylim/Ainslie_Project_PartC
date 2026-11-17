@@ -1,5 +1,5 @@
 """
-Run a hyperbolic (or sticky hyperbolic) agent on the memoryless SS/LL timeline.
+Run a hyperbolic agent on the memoryless SS/LL timeline.
 Edit the params below, then run from this directory:
 
     python main.py
@@ -7,16 +7,12 @@ Edit the params below, then run from this directory:
 Units are hours. One choice per day (decision_interval=24).
 LL delay is hours after the choice (e.g. 12 ≈ next morning).
 
-Set agent_kind = "sticky" to use StickyHypAgent (stickiness in agent_params).
-Set agent_kind = "hyperbolic" for the original pure-commitment HypAgent.
-
 To visualise value curves at each decision point:
 
     python -m visual_demos.visualize_main
 """
 
 from agents.hyperbolic import HypAgent
-from agents.sticky import StickyHypAgent
 from environments.timeline import TimelineEnvironment
 
 # === Params ===
@@ -30,27 +26,17 @@ env_params = {
     },
 }
 
-# "hyperbolic" => HypAgent (pure commitment when vision=long)
-# "sticky"     => StickyHypAgent (foresight under stickiness)
-agent_kind = "hyperbolic" 
-
 agent_params = {
     "discount_factor": 0.6,
     "vision": "long",  # "short" or "long"
     "horizon": 10,  # max # of decisions to plan; capped by remaining env decisions, includes the current day (min. 1)
 }
 
-# used by StickyHypAgent only; s=1 matches HypAgent long vision
-stickiness = 0.6
 max_steps = None  # used when env length is None to cap this run as a safety stop. Should always be none for steppable infinite environments.
 
 
 def make_agent():
-    if agent_kind == "hyperbolic":
-        return HypAgent(**agent_params)
-    if agent_kind == "sticky":
-        return StickyHypAgent(**agent_params, stickiness=stickiness)
-    raise ValueError(f"Unknown agent_kind: {agent_kind!r}")
+    return HypAgent(**agent_params)
 
 
 def run():
@@ -63,11 +49,11 @@ def run():
 
     print("Starting...")
     print(f"state={state}h (interval={environment.decision_interval}h)")
-    print(f"agent_kind={agent_kind}")
-    if agent_kind == "sticky":
-        print(f"stickiness={agent.stickiness}")
 
-    while not finished and steps < max_steps:
+    # Finite env: stop when finished. Infinite: require max_steps.
+    while not finished and (max_steps is None or steps < max_steps):
+        if environment.length is None and max_steps is None:
+            raise ValueError("max_steps must be set when environment.length is None")
         action, action_values = agent.choose_action(state, environment)
         # earned_reward = environment.payout(action) ## only if tracking payouts
         state, finished = environment.step(action)
