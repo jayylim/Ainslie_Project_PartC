@@ -1031,7 +1031,7 @@ def hyperbolic_frame(reward, initial_delay, discount_factor, *, elapsed=0):
 
 # ---------------------------------------------------------------------------
 # Sticky max-SS-resisted curves
-# Sweep stickiness × LL delay; uses max_ss_resisted / sticky_delay_rgba above.
+# Sweep perceived stickiness × LL delay; uses max_ss_resisted / sticky_delay_rgba above.
 # ---------------------------------------------------------------------------
 
 def stickiness_axis():
@@ -1153,10 +1153,10 @@ def sticky_curves(agent, environment, state, delay_max, delay_step, reward_LL=No
                 f"horizon={horizon}, discount_factor={agent.discount_factor}"
             ),
             "xaxis": {
-                "title": "Stickiness s",
+                "title": "Perceived Stickiness (s)",
                 "range": [0, 1],
                 "autorange": False,
-                # Lock s ∈ [0, 1]: pan/zoom can still move y, but not past stickiness bounds
+                # Lock s ∈ [0, 1]: pan/zoom can still move y, but not past perceived-stickiness bounds
                 "fixedrange": True,
             },
             "yaxis": {

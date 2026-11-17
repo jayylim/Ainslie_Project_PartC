@@ -335,7 +335,7 @@ def api_demo(name):
     if name == "visualise_sticky_sails":
         s = request.args.get("stickiness", DEFAULT_STICKINESS, type=float)
         if s is None or s != s:  # None / NaN
-            return jsonify({"error": "stickiness must be a number in [0, 1]"}), 400
+            return jsonify({"error": "s must be a number in [0, 1]"}), 400
         s = max(0.0, min(1.0, float(s)))
         sticky_agent = StickyHypAgent(
             **_build_agent_params(_config), perceived_s=s
@@ -721,7 +721,7 @@ PAGE = r"""
         <span>LL delay step: <strong id="delayStepVal">{{ default_delay_step }}h</strong></span>
         <input type="range" id="delayStep" min="1" max="12" step="1" value="{{ default_delay_step }}"/>
       </div>
-      <label style="min-width:120px;">Stickiness s
+      <label style="min-width:120px;">Perceived Stickiness (s)
         <input type="number" id="stickiness" value="{{ default_stickiness }}" min="0" max="1" step="0.01"/>
       </label>
     </div>
@@ -981,7 +981,9 @@ function fillMeta(el, payload) {
     const av = m.action_values;
     const dayBit = m.day != null ? `Day ${m.day} · ` : "";
     const stickyBit =
-      m.perceived_s != null ? `s = ${Number(m.perceived_s).toFixed(2)} · ` : "";
+      m.perceived_s != null
+        ? `Perceived Stickiness (s) = ${Number(m.perceived_s).toFixed(2)} · `
+        : "";
     const doneBit = m.finished ? " · finished" : "";
     el.innerHTML =
       dayBit +
