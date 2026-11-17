@@ -21,7 +21,7 @@ from environments.timeline import TimelineEnvironment
 
 # === Params ===
 env_params = {
-    "length": None,  # Time in hours; or None for infinite
+    "length": 240,  # Time in hours; or None for infinite
     "start": 0,
     "decision_interval": 24,  # hours between decisions
     "rewards": {
@@ -42,7 +42,7 @@ agent_params = {
 
 # used by StickyHypAgent only; s=1 matches HypAgent long vision
 stickiness = 0.6
-max_steps = None  # used when env length is None; also caps the run as a safety stop
+max_steps = None  # used when env length is None to cap this run as a safety stop. Should always be none for steppable infinite environments.
 
 
 def make_agent():
