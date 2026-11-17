@@ -1,6 +1,6 @@
 # Simplified Decision Agent
 
-Hyperbolic discounter on a memoryless SS/LL timeline (Ainslie-style bundling). Edit params in `main.py`, then run from this directory.
+Hyperbolic discounter on a memoryless SS/LL timeline (Ainslie-style bundling). Edit **agent** defaults in `agents/agent_configs.py` and **env** / run caps in `main.py`, then run from this directory.
 
 ## Live demo
 
@@ -20,7 +20,7 @@ Interactive demos (no install): **[https://ainslie-project-partc.onrender.com](h
 
 ## Vision modes
 
-Set `agent_params["vision"]` in `main.py`:
+Set `agent_params["vision"]` (or `sticky_params["vision"]`) in `agents/agent_configs.py`:
 
 
 | Mode    | Meaning                                              |
@@ -54,7 +54,7 @@ Whether that commitment is deterministic or stochastic depends on the stickiness
 
 | Layer         | Files                                                        | Role                                                                   |
 | ------------- | ------------------------------------------------------------ | ---------------------------------------------------------------------- |
-| Config Params | `main.py` · `sticky_decisions.py`                            | Owns `env_params`, `agent_params`, `max_steps`; sticky adds `s`        |
+| Config Params | `agents/agent_configs.py` · `main.py`                        | Agent init (`agent_params` / `sticky_params`); env (incl. `true_stickiness`) + `max_steps` in main |
 | Logic Core    | `environments/timeline.py` · `agents/hyperbolic.py`          | Timeline offers SS/LL; HypAgent discounts and chooses                  |
 | Outcomes      | main run loop · sticky_decisions run loop · `visual_demos/*` | Independent products that call core logic to observe agent's decisions |
 | Web UI        | `web_app/demo_web_app.py` · `web_app/plot_series.py`         | Flask + Plotly; series builders mirror visual demos                    |
@@ -64,18 +64,19 @@ Whether that commitment is deterministic or stochastic depends on the stickiness
 
 ## Read order
 
-1. `environments/timeline.py` — environment defaults and available actions/paths within environment
-2. `agents/hyperbolic.py` — value function and decision-making logic
-3. `main.py` — config parameters; run to view decision computations (printout values)
-4. `sticky_decisions.py` — adds stickiness parameter (uses same agent and environment)
-5. `visual_demos/*` — illustrations with varying parameters and contexts for demonstration
-6. `web_app/*` — unified browser UI over the demos (`plot_series` builds Plotly payloads)
+1. `agents/agent_configs.py` — default HypAgent / StickyHypAgent initialisation params
+2. `environments/timeline.py` — environment defaults and available actions/paths within environment
+3. `agents/hyperbolic.py` — value function and decision-making logic
+4. `main.py` — env params (incl. `true_stickiness` for sticky env) + `max_steps`; run to view decision computations
+5. `sticky_decisions.py` — stickiness valuation (uses `sticky_params` + same env)
+6. `visual_demos/*` — illustrations with varying parameters and contexts for demonstration
+7. `web_app/*` — unified browser UI over the demos (`plot_series` builds Plotly payloads)
 
 `__init__.py` files  are just package markers only
 
 ## Runtime order ([main.py](http://main.py))
 
-1. Load params from `main.py`
+1. Load `agent_params` from `agents/agent_configs.py` and env/`max_steps` from `main.py`
 2. Build `TimelineEnvironment` + `HypAgent`
 3. `reset()` → state = start time (hours)
 4. Each decision day: `get_actions` → evaluate (short: `simulate` / long: `horizon_outcomes`) → greedy `choose_action` → `step(+decision_interval)`
