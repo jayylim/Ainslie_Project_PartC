@@ -32,9 +32,10 @@ try:
 except Exception:
     pass
 
+from agents.agent_configs import agent_params
 from agents.hyperbolic import HypAgent
 from environments.timeline import TimelineEnvironment
-from main import agent_params, env_params
+from main import env_params
 from sticky_decisions import stick_p_t
 
 # === Editable: LL delays to plot (hours after choice) ===

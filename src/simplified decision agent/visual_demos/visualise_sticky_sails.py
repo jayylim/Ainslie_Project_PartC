@@ -33,14 +33,14 @@ try:
 except Exception:
     pass
 
-from agents.sticky import StickyHypAgent
+from agents.agent_configs import sticky_params
+from agents.sticky_agent import StickyHypAgent
 from environments.timeline import TimelineEnvironment
-from main import agent_params, env_params
+from main import env_params
 
-# === StickyHypAgent-related params (edit here) ===
-stickiness = 0.6  # fixed perceived ŝ; s=1 matches HypAgent long vision
-learn_stickiness = False  # snapshot demo: no Bayesian updates
-# Shared timeline / hyperbolic knobs still come from main.env_params / main.agent_params.
+# Defaults from agents/agent_configs.py; snapshot demo forces no Bayesian updates.
+perceived_s = sticky_params["perceived_s"]  # fixed perceived s; s=1 matches HypAgent long vision
+learn_stickiness = False
 
 # --- Optional sticky foresight panels (easy to reject) -------------------
 # Set False, or delete this flag + the call in main(), and delete
@@ -219,9 +219,7 @@ def plot_aggregates(axes, action_values, chosen):
 def main():
     environment = TimelineEnvironment(**env_params)
     agent = StickyHypAgent(
-        **agent_params,
-        stickiness=stickiness,
-        learn_stickiness=learn_stickiness,
+        **{**sticky_params, "perceived_s": perceived_s, "learn_stickiness": learn_stickiness}
     )
     state = environment.reset()
 
@@ -268,7 +266,7 @@ def main():
     axes.set_xlabel("Hours from now (decision node)")
     axes.set_ylabel("Perceived value")
     axes.set_title(
-        f"Sticky sails | s={stickiness} | horizon={n} days  |  "
+        f"Sticky sails | s={perceived_s} | horizon={n} days  |  "
         f"Agent would choose {action}"
     )
     axes.legend(loc="upper right")
@@ -277,7 +275,7 @@ def main():
     snack_days = agent.choice_horizon(state, "snack", environment)
     resist_days = agent.choice_horizon(state, "resist", environment)
 
-    print(f"Horizon = {n}  stickiness s = {stickiness}")
+    print(f"Horizon = {n}  perceived_s = {perceived_s}")
     print()
     print(
         "Table 1 — Pure hyperbolic day values\n"
@@ -311,7 +309,7 @@ def main():
     # Optional second figure — see SHOW_STICKY_BREAKDOWN / sticky_foresight_panels.py
     if SHOW_STICKY_BREAKDOWN:
         show_sticky_breakdown(
-            agent, environment, state, action_values, action, stickiness
+            agent, environment, state, action_values, action, perceived_s
         )
 
     plt.show()

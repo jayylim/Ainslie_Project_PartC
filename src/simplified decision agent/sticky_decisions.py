@@ -4,7 +4,7 @@ Factoring in stickiness into the aggregated decision.
 Shows the agent's computed values for the first decision node.
 
 Snapshot compputation of t=1: Does not step the environment. 
-Reuses main.py, hyperbolic.py, and timeline.py params and helpers.
+Reuses agents/agent_configs.py, main.py env params, hyperbolic.py, and timeline.py.
 
 Definitions and notation (see legend at bottom of this docstring):
 
@@ -45,13 +45,14 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from agents.agent_configs import agent_params, sticky_params
 from agents.hyperbolic import HypAgent
 from environments.timeline import TimelineEnvironment
-from main import agent_params, env_params
+from main import env_params
 
-# === StickyHypAgent-related params (edit here) ===
-s = 0.8  # perceived stickiness in [0, 1]; s = 1 recovers pure long-vision bundling
-# Shared timeline / hyperbolic knobs still come from main.env_params / main.agent_params.
+# Perceived stickiness; s = 1 recovers pure long-vision bundling.
+# Edit defaults in agents/agent_configs.py (sticky_params).
+s = sticky_params["perceived_s"]
 
 OTHER = {"snack": "resist", "resist": "snack"}  # b given a
 

@@ -33,7 +33,8 @@ except Exception:
 
 from agents.hyperbolic import HypAgent
 from environments.timeline import TimelineEnvironment
-from main import agent_params, env_params
+from agents.agent_configs import agent_params
+from main import env_params
 
 COLORS = {"snack": "#c44e52", "resist": "#4c72b0"}
 

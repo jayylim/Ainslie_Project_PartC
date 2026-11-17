@@ -739,7 +739,7 @@ def sails_frame(agent, environment, state, *, day=None):
 def sticky_sails_frame(agent, environment, state):
     """
     Same dual-panel look as visualise_sails / sails_frame, but aggregates use
-    StickyHypAgent stickiness (visualise_sticky_sails / sticky_decisions).
+    StickyHypAgent perceived_s (visualise_sticky_sails / sticky_decisions).
 
     Light sails = pure hyperbolic SS / LL trajectories.
     Opaque t=0 scatters + left Σ bars = sticky EV bundles.
@@ -749,7 +749,7 @@ def sticky_sails_frame(agent, environment, state):
     n = len(ll_events)
     action, action_values = agent.choose_action(state, environment)
     snack_parts, resist_parts = _sticky_stack_parts(agent, environment, state)
-    stickiness = getattr(agent, "stickiness", None)
+    perceived_s = getattr(agent, "perceived_s", None)
 
     return _sails_dual_panel(
         agent,
@@ -760,11 +760,11 @@ def sticky_sails_frame(agent, environment, state):
         snack_parts,
         resist_parts,
         title_prefix=(
-            f"Sticky sails | s={stickiness} | "
+            f"Sticky sails | s={perceived_s} | "
             f"Choice sails with a horizon of {n} days"
         ),
         kind="sticky_sails",
-        extra_meta={"stickiness": stickiness},
+        extra_meta={"perceived_s": perceived_s},
     )
 
 

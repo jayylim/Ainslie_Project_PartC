@@ -32,24 +32,24 @@ sys.path.insert(0, str(_WEB_DIR))
 
 from flask import Flask, jsonify, render_template_string, request
 
+from agents.agent_configs import agent_params, sticky_params
 from agents.hyperbolic import HypAgent
-from agents.sticky import StickyHypAgent
+from agents.sticky_agent import StickyHypAgent
 from environments.timeline import TimelineEnvironment
 from main import (
-    agent_params,
     env_params,
     max_steps as default_max_steps,
 )
 import plot_series
 
-# === Defaults (seeded from main.py; stickiness is sticky-demo local) ===
+# === Defaults (agent from agent_configs; env/max_steps from main.py) ===
 DEFAULT_DELAY_MAX = 24
 DEFAULT_DELAY_STEP = 4
-DEFAULT_STICKINESS = 0.6
+DEFAULT_STICKINESS = sticky_params["perceived_s"]
 
 app = Flask(__name__)
 
-# Defaults from main.py (immutable seed for "Reset to default")
+# Immutable seed for "Reset to default"
 _DEFAULT_CONFIG = {
     "ss_value": env_params["rewards"]["SS"]["value"],
     "ss_delay": env_params["rewards"]["SS"]["delay"],
@@ -338,7 +338,7 @@ def api_demo(name):
             return jsonify({"error": "stickiness must be a number in [0, 1]"}), 400
         s = max(0.0, min(1.0, float(s)))
         sticky_agent = StickyHypAgent(
-            **_build_agent_params(_config), stickiness=s
+            **_build_agent_params(_config), perceived_s=s
         )
         return jsonify(
             plot_series.sticky_sails_frame(sticky_agent, environment, state)
@@ -367,7 +367,7 @@ def api_sticky():
 
 @app.route("/")
 def index():
-    # Form fields seed from live config; DEFAULT_CONFIG in JS is always main.py seed
+    # Form fields seed from live config; DEFAULT_CONFIG in JS is agent_configs + main env seed
     return render_template_string(
         PAGE,
         ss_value=_config["ss_value"],
@@ -981,7 +981,7 @@ function fillMeta(el, payload) {
     const av = m.action_values;
     const dayBit = m.day != null ? `Day ${m.day} · ` : "";
     const stickyBit =
-      m.stickiness != null ? `s = ${Number(m.stickiness).toFixed(2)} · ` : "";
+      m.perceived_s != null ? `s = ${Number(m.perceived_s).toFixed(2)} · ` : "";
     const doneBit = m.finished ? " · finished" : "";
     el.innerHTML =
       dayBit +

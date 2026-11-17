@@ -8,7 +8,7 @@ Reward delays are in hours relative to the choice (e.g. LL delay=12 = next morni
 
 
 class TimelineEnvironment:
-    def __init__(self, rewards, length=None, start=0, decision_interval=24):
+    def __init__(self, rewards, length=None, start=0, decision_interval=24, true_stickiness=None):
         self.rewards = rewards
         self.length = length  # None => infinite; units = hours
         self.start = start

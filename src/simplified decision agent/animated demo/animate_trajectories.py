@@ -31,19 +31,20 @@ import numpy as np
 from matplotlib.animation import FuncAnimation
 from matplotlib.patches import Rectangle
 
-from agents.sticky import StickyHypAgent
+from agents.agent_configs import sticky_params
+from agents.sticky_agent import StickyHypAgent
 from environments.timeline import TimelineEnvironment
-from main import agent_params, env_params
+from main import env_params
 
-# === StickyHypAgent-related params (edit here) ===
-stickiness = 0.6
+# Defaults from agents/agent_configs.py (sticky_params).
+perceived_s = sticky_params["perceived_s"]
 
 # --- Demo knobs -----------------------------------------------------------
 # Matplotlib can drop frames when INTERVAL_MS is tiny; update() catch-up
 # commits any skipped batches so the final margins stay exact.
 # Raise PATHS_PER_FRAME to go faster (more paths per redraw).
 INTERVAL_MS = 2          # frame rate of animation
-PATHS_PER_FRAME = agent_params["horizon"]/2  # paths per frame; flash only the last
+PATHS_PER_FRAME = sticky_params["horizon"] / 2  # paths per frame; flash only the last
 RNG_SEED = 0              # shuffle enumeration order only
 MAX_HORIZON = 14          # stop above this (2^(H-1) paths)
 # ------------------------------------------------------------------------
@@ -406,10 +407,12 @@ def build_batches(n_paths: int, paths_per_frame: int):
 
 def main():
     environment = TimelineEnvironment(**env_params)
-    agent = StickyHypAgent(**agent_params, stickiness=stickiness)
+    agent = StickyHypAgent(
+        **{**sticky_params, "perceived_s": perceived_s, "learn_stickiness": False}
+    )
     state = environment.reset()
     horizon = agent.get_horizon(state, environment)
-    s = float(stickiness)
+    s = float(perceived_s)
 
     n_all = 2**horizon
     n_snack_first = 2 ** max(horizon - 1, 0)
@@ -424,8 +427,8 @@ def main():
         print(
             f"\nSTOP: horizon={horizon} exceeds MAX_HORIZON={MAX_HORIZON} "
             f"({n_snack_first} snack-first paths).\n"
-            f"Lower agent horizon in main.py (or raise MAX_HORIZON) before "
-            f"running the full weighted sweep."
+            f"Lower agent horizon in agents/agent_configs.py (or raise MAX_HORIZON) "
+            f"before running the full weighted sweep."
         )
         sys.exit(1)
 
