@@ -21,6 +21,10 @@ COLORS = {
     # Sail bases; later foresight days fade toward white (labels stay opaque)
     "snack_sail": "#c44e52",
     "resist_sail": "#4c72b0",
+    # sticky_step Beta belief panel
+    "belief": "#2ca02c",
+    "true_s": "#111111",
+    "perceived_s": "#ff7f0e",
 }
 
 
@@ -766,6 +770,205 @@ def sticky_sails_frame(agent, environment, state):
         kind="sticky_sails",
         extra_meta={"perceived_s": perceived_s},
     )
+
+
+def sticky_step_frame(agent, environment, state, *, day=None, last_info=None):
+    """
+    Stepped sticky sails + Beta posterior (sticky_step.py).
+
+    Left: SS / LL hyperbolic sails and sticky EV aggregates under perceived s.
+    Right: Beta posterior over stickiness with s_true and ŝ overlays.
+
+    Environment owns beta_belief (always updates on stick/switch). With
+    learn_stickiness On, foresight keeps initialised perceived_s until the
+    first stick/switch obs, then tracks ŝ.
+    """
+    beta_belief = getattr(environment, "beta_belief", None)
+    if beta_belief is None:
+        raise ValueError("sticky_step_frame requires environment.beta_belief")
+
+    ss_events, ll_events = sticky_outcome_events(agent, environment, state)
+    n = agent.get_horizon(state, environment)
+    s_hat = environment.s_hat()
+    perceived_s = agent.perceived_stickiness(environment)
+    true_s = float(environment.true_stickiness)
+    intent, action_values = agent.choose_action(state, environment)
+
+    # --- Left: sails (same geometry as sticky_step.draw_frame) ---
+    sail_traces = []
+    shapes = []
+    y_max = 0.0
+
+    n_sails = len(ll_events)
+    for i, (delay, reward) in enumerate(ll_events):
+        decision_t = ss_events[i][0]
+        traces_i, shapes_i, peak = _ll_sail_trace(
+            agent,
+            delay,
+            reward,
+            decision_t,
+            sail_color=fade(COLORS["resist_sail"], i, n_sails),
+            label="resist" if i == 0 else None,
+            show_legend=(i == 0),
+        )
+        sail_traces.extend(traces_i)
+        shapes.extend(shapes_i)
+        y_max = max(y_max, peak)
+
+    ss_traces, ss_ymax = _ss_sail_traces(agent, ss_events)
+    sail_traces.extend(ss_traces)
+    y_max = max(y_max, ss_ymax)
+
+    agg_traces, agg_ymax = _aggregate_traces(action_values, intent)
+    sail_traces.extend(agg_traces)
+    y_max = max(y_max, agg_ymax)
+
+    _assign_axes(sail_traces, xaxis="x", yaxis="y")
+    shapes = _shapes_on_subplot(shapes, xref="x", yref="y")
+
+    interval = environment.decision_interval
+    horizon_days = agent.horizon if agent.horizon is not None else n
+    x_max = horizon_days * interval
+    pad_x = max(8, x_max * 0.12)
+    xticks, xticklabels = _hour_xticks(x_max)
+
+    # --- Right: Beta posterior ---
+    xs, dens = beta_belief.pdf_grid(n=251)
+    y_top = max(dens) if dens else 1.0
+    belief_traces = [
+        {
+            "type": "scatter",
+            "mode": "lines",
+            "x": xs,
+            "y": dens,
+            "line": {"color": COLORS["belief"], "width": 2.0},
+            "fill": "tozeroy",
+            "fillcolor": "rgba(44,160,44,0.18)",
+            "name": "Beta posterior",
+            "xaxis": "x2",
+            "yaxis": "y2",
+            "hovertemplate": "s=%{x:.3f}<br>density=%{y:.3f}<extra></extra>",
+        },
+        {
+            "type": "scatter",
+            "mode": "lines",
+            "x": [true_s, true_s],
+            "y": [0.0, y_top * 1.15 if y_top else 1.0],
+            "line": {"color": COLORS["true_s"], "width": 1.5, "dash": "dash"},
+            "name": f"s_true={true_s:.2f}",
+            "xaxis": "x2",
+            "yaxis": "y2",
+            "hoverinfo": "skip",
+        },
+        {
+            "type": "scatter",
+            "mode": "lines",
+            "x": [s_hat, s_hat],
+            "y": [0.0, y_top * 1.15 if y_top else 1.0],
+            "line": {"color": COLORS["perceived_s"], "width": 1.5},
+            "name": f"ŝ={s_hat:.2f}",
+            "xaxis": "x2",
+            "yaxis": "y2",
+            "hoverinfo": "skip",
+        },
+    ]
+
+    day_bit = f"Day {day}  |  " if day is not None else ""
+    title = {
+        "text": (
+            f"{day_bit}Perceived stickiness={perceived_s:.3f} | "
+            f"True stickiness={true_s}  |  horizon={n}  |  "
+            f"<b>Agent would choose {intent}</b>"
+        ),
+        "font": {"size": 15, "color": "#1a1d23"},
+    }
+
+    sails_domain = [0.0, 0.66]
+    belief_domain = [0.72, 1.0]
+    belief_title = (
+        f"Beta Distribution<br>"
+        f"α={beta_belief.alpha:.1f} | β={beta_belief.beta:.1f}<br>"
+        f"sticks={beta_belief.n_stick()} | switches={beta_belief.n_switch()}"
+    )
+
+    meta = {
+        "day": day,
+        "horizon": n,
+        "choice": intent,
+        "action_values": action_values,
+        "ll_ss_gap": action_values["resist"] - action_values["snack"],
+        "perceived_s": perceived_s,
+        "s_hat": s_hat,
+        "true_stickiness": true_s,
+        "learn_stickiness": bool(agent.learn_stickiness),
+        "alpha": beta_belief.alpha,
+        "beta": beta_belief.beta,
+        "n_stick": beta_belief.n_stick(),
+        "n_switch": beta_belief.n_switch(),
+    }
+    if last_info:
+        meta["last_intent"] = last_info.get("intent")
+        meta["last_realized"] = last_info.get("realized")
+        meta["last_stuck"] = last_info.get("stuck")
+
+    return {
+        "kind": "sticky_step",
+        "traces": sail_traces + belief_traces,
+        "layout": {
+            "title": title,
+            "xaxis": {
+                "title": "Hours from now",
+                "domain": sails_domain,
+                "range": [-pad_x, x_max + pad_x],
+                "tickvals": xticks,
+                "ticktext": xticklabels,
+                "anchor": "y",
+            },
+            "yaxis": {
+                "title": "Perceived value",
+                "domain": [0.0, 0.88],
+                "range": [0, y_max * 1.25 if y_max else 1],
+                "anchor": "x",
+            },
+            "xaxis2": {
+                "title": "Stickiness s",
+                "domain": belief_domain,
+                "range": [0.0, 1.0],
+                "anchor": "y2",
+            },
+            "yaxis2": {
+                "title": "Density",
+                "domain": [0.0, 0.88],
+                "range": [0.0, y_top * 1.15 if y_top else 1.0],
+                "anchor": "x2",
+            },
+            "annotations": [
+                {
+                    "x": 0.5 * (belief_domain[0] + belief_domain[1]),
+                    "y": 1.0,
+                    "xref": "paper",
+                    "yref": "paper",
+                    "text": belief_title,
+                    "showarrow": False,
+                    "font": {"size": 12, "color": "#1a1d23"},
+                    "xanchor": "center",
+                    "yanchor": "top",
+                    "align": "center",
+                    "yshift": -8,
+                }
+            ],
+            "shapes": shapes,
+            "legend": {
+                "orientation": "h",
+                "y": -0.16,
+                "x": 0.0,
+                "xref": "paper",
+            },
+            "margin": {"l": 60, "r": 24, "t": 72, "b": 90},
+            "height": 700,
+        },
+        "meta": meta,
+    }
 
 
 def aggregate_frame(agent, environment, state):

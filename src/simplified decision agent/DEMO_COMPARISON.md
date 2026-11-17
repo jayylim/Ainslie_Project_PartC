@@ -7,7 +7,7 @@ Side-by-side of `visual_demos/` (+ `animated demo/`) and `web_app/`.
 | --- | --- | --- |
 | Rendering | Matplotlib windows | Plotly in browser (math in `plot_series.py`) |
 | Params | Per-script / `main.py` + `agent_configs` | Shared live panel (SS/LL, length, horizon, k, vision, max steps) |
-| Sticky knobs | `sticky_params.perceived_s`, `learn_stickiness` (`agents/sticky_agent.py`) | Sticky sails use fixed `perceived_s` (UI still labeled “Stickiness s”; API query `?stickiness=`) |
+| Sticky knobs | `sticky_params.perceived_s`, `learn_stickiness` (`agents/sticky_agent.py`) | Sticky sails: fixed `perceived_s`. Steppable `sticky_step`: Learn toggle + perceived s / s_true |
 | Interaction | Click / keypress / static `plt.show` | Tabs + Step/Reset + sliders / click-to-set `s` |
 
 ---
@@ -23,7 +23,7 @@ Side-by-side of `visual_demos/` (+ `animated demo/`) and `web_app/`.
 | Max SS resisted vs stickiness                  | `sticky_graph.py`                               | Sticky → top chart                | Same maths; minor design differences for visual clarity |
 | Sticky sails (sticky EV aggregates)            | `visualise_sticky_sails.py`                     | Sticky → bottom chart             | Same maths; Still figuring out the better visual        |
 | Sticky foresight “beaker” panels               | `sticky_foresight_panels.py` (via sticky sails) | —                                 | **To be aligned** (project only)                        |
-| Stepped sticky + Bayesian belief               | `sticky_step.py`                                | —                                 | **To be aligned** (project only)                        |
+| Stepped sticky + Bayesian belief               | `sticky_step.py`                                | Steppable → `sticky_step`         | Same (learn-stickiness toggle in steppable chrome)      |
 | Animated sticky path mass                      | `animated demo/animate_trajectories.py`         | —                                 | **To be aligned** (project only)                        |
 
 ---
@@ -97,19 +97,31 @@ Side-by-side of `visual_demos/` (+ `animated demo/`) and `web_app/`.
 
 ---
 
-### 6. Project-only (no web counterpart)
+### 6. `sticky_step` — stepped sticky sails + Bayesian belief
+
+| | Project | Web |
+| --- | --- | --- |
+| Mechanism | Same: `StickyTimelineEnvironment` + `StickyHypAgent` + Beta belief; intent vs realized stick/switch rolls | Same (`sticky_step_frame`) |
+| Layout | Left sails + sticky aggregates; right Beta posterior with s_true / ŝ | Same dual subplot |
+| Learn toggle | `sticky_params["learn_stickiness"]` | Steppable chrome On/Off (belief always updates; foresight uses init `perceived_s` until first obs, then ŝ) |
+| Advance | Click / keypress | Step button |
+
+**Same** mechanism. Shared Main parameters drive rewards / horizon / k / vision / max steps.
+
+---
+
+### 7. Project-only (no web counterpart)
 
 | Script | What it shows (current behaviour) |
 | --- | --- |
 | `sticky_foresight_panels.py` | Visit-probability beaker tracks for snack-first vs resist-first |
-| `sticky_step.py` | Stepped sticky sails (left) + Beta posterior (right). `StickyTimelineEnvironment` owns `beta_belief` and always updates ŝ; `learn_stickiness` only gates whether the agent’s foresight uses env ŝ vs fixed `perceived_s`. Intent vs realized action from stick/switch rolls. |
 | `animated demo/animate_trajectories.py` | Animated accumulation of snack-first path mass → `stick_p_t` |
 
-**To be aligned:** none of these exist in the web app.
+**To be aligned:** foresight beaker panels and trajectory animation.
 
 ---
 
-### 7. Web-only conveniences (no single project script)
+### 8. Web-only conveniences (no single project script)
 
 | Feature | Notes |
 | --- | --- |
@@ -127,7 +139,7 @@ Side-by-side of `visual_demos/` (+ `animated demo/`) and `web_app/`.
 | --- | --- |
 | Sticky agent module | `agents/sticky_agent.py` (`StickyHypAgent`) |
 | Perceived stickiness param | `perceived_s` in `sticky_params` / agent ctor |
-| Learning toggle | `learn_stickiness` — env always updates belief when attached; agent only tracks ŝ when True |
+| Learning toggle | `learn_stickiness` — env always updates belief when attached; when True, foresight keeps init `perceived_s` until first obs, then tracks ŝ |
 | True stickiness | `env_params["true_stickiness"]` on `StickyTimelineEnvironment` |
 
 ---
@@ -137,5 +149,5 @@ Side-by-side of `visual_demos/` (+ `animated demo/`) and `web_app/`.
 - **Mechanisms that match:** sails maths, aggregate bundle, hyperbolic approach, sticky threshold solve, sticky EV aggregates (fixed `perceived_s`).
 - **Largest gaps to align:**    
   1. Sticky foresight'beaker' panels (project only)  
-  2. Sticky learning / animation demos (`sticky_step`, `animate_trajectories`) missing from web  
+  2. Trajectory animation (`animate_trajectories`) missing from web  
 - **Decided / open (not hard gaps):** keep web dual-panel for stepped sails; sticky graph = minor design differences; sticky sails visual still being figured out.

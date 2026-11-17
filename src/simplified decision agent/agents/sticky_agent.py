@@ -13,7 +13,7 @@ Acts only through the environment interface (simulate / get_actions).
 Optional Bayesian learning:
   The environment owns the beta_belief and ŝ = beta_belief.mean().
   learn_stickiness only gates whether foresight tracks environment.s_hat();
-  when True, perceived_s is updated to ŝ whenever perceived_stickiness is read.
+  when True, perceived_s is updated to ŝ whenever perceived_stickiness is read (after the first step)
   when False, planning keeps the fixed perceived_s parameter.
   Never writes an environment's true_stickiness.
 """
@@ -35,11 +35,20 @@ class StickyHypAgent:
         self.learn_stickiness = bool(learn_stickiness)
 
     def perceived_stickiness(self, environment):
-        "perceived s plugged into stick_p_t; tracks env ŝ when learn_stickiness."
-        if self.learn_stickiness:
-            return environment.s_hat()
-        else:
+        """Foresight s for stick_p_t.
+
+        learn_stickiness Off → always the fixed perceived_s parameter.
+        learn_stickiness On  → perceived_s until beta_belief has ≥1 obs, then ŝ.
+        """
+        if not self.learn_stickiness:
             return self.perceived_s
+
+        beta_belief = getattr(environment, "beta_belief", None)
+        if beta_belief is None or beta_belief.n_obs() == 0:
+            return self.perceived_s
+
+        s_hat = environment.s_hat()
+        return self.perceived_s if s_hat is None else s_hat
 
     def value_function(self, reward, distance):
         return reward / (1 + self.discount_factor * distance)  # hyperbolic discounting formula

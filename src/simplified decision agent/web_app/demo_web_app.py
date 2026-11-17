@@ -3,7 +3,7 @@ Unified interactive web app for the visual demos.
 
 Shared top-level params (rewards, delays, env length, horizon, vision).
 Three sections:
-  - Steppable: visualizing_main (env days) | hyperbolic_curve (reward approaching day 0)
+  - Steppable: visualizing_main | hyperbolic_curve | sticky_step
   - Non-steppable: visualise_sails | aggregate_sail
   - Sticky: sticky_graph + visualise_sticky_sails (stacked; click current curve sets s)
 
@@ -35,7 +35,9 @@ from flask import Flask, jsonify, render_template_string, request
 from agents.agent_configs import agent_params, sticky_params
 from agents.hyperbolic import HypAgent
 from agents.sticky_agent import StickyHypAgent
+from environments.sticky_timeline import StickyTimelineEnvironment
 from environments.timeline import TimelineEnvironment
+from learning.bayesian_stickiness import BayesianStickinessBelief
 from main import (
     env_params,
     max_steps as default_max_steps,
@@ -46,6 +48,11 @@ import plot_series
 DEFAULT_DELAY_MAX = 24
 DEFAULT_DELAY_STEP = 4
 DEFAULT_STICKINESS = sticky_params["perceived_s"]
+DEFAULT_LEARN_STICKINESS = sticky_params["learn_stickiness"]
+DEFAULT_TRUE_STICKINESS = env_params["true_stickiness"]
+STICKY_STEP_SEED = 0
+STICKY_PRIOR_ALPHA = 1.0
+STICKY_PRIOR_BETA = 1.0
 
 app = Flask(__name__)
 
@@ -82,6 +89,21 @@ _hyp_session = {
     "finished": False,
 }
 
+# sticky_step.py: StickyTimelineEnvironment + StickyHypAgent + Beta belief
+_sticky_step_opts = {
+    "learn_stickiness": DEFAULT_LEARN_STICKINESS,
+    "perceived_s": DEFAULT_STICKINESS,
+    "true_stickiness": DEFAULT_TRUE_STICKINESS,
+}
+_sticky_session = {
+    "environment": None,
+    "agent": None,
+    "state": None,
+    "day": 0,
+    "finished": False,
+    "last_info": None,
+}
+
 
 def _parse_optional_int(value):
     """Blank / None → None; otherwise int. Rejects non-numeric strings."""
@@ -110,6 +132,16 @@ def _build_agent_params(cfg):
         "discount_factor": float(cfg["discount_factor"]),
         "vision": cfg["vision"],
         "horizon": horizon,
+    }
+
+
+def _build_sticky_agent_params(cfg=None):
+    """StickyHypAgent kwargs: shared agent knobs + sticky foresight options."""
+    base = _build_agent_params(cfg or _config)
+    return {
+        **base,
+        "perceived_s": float(_sticky_step_opts["perceived_s"]),
+        "learn_stickiness": bool(_sticky_step_opts["learn_stickiness"]),
     }
 
 
@@ -144,7 +176,7 @@ def validate_config(cfg):
 
 
 def rebuild_session(cfg=None):
-    """Rebuild agent/env from config and reset both steppable demos."""
+    """Rebuild agent/env from config and reset all steppable demos."""
     if cfg is not None:
         _config.update(cfg)
     environment = TimelineEnvironment(**_build_env_params(_config))
@@ -160,6 +192,7 @@ def rebuild_session(cfg=None):
         }
     )
     reset_hyp_session()
+    rebuild_sticky_session()
     return _session
 
 
@@ -167,6 +200,30 @@ def reset_hyp_session():
     """Restart hyperbolic approach at elapsed = 0 (full remaining delay)."""
     _hyp_session.update({"elapsed": 0, "finished": False})
     return _hyp_session
+
+
+def rebuild_sticky_session():
+    """Rebuild sticky_step env/agent (StickyTimeline + Beta belief + StickyHypAgent)."""
+    env_kwargs = _build_env_params(_config)
+    env_kwargs["true_stickiness"] = float(_sticky_step_opts["true_stickiness"])
+    env_kwargs["beta_belief"] = BayesianStickinessBelief(
+        alpha=STICKY_PRIOR_ALPHA, beta=STICKY_PRIOR_BETA
+    )
+    env_kwargs["seed"] = STICKY_STEP_SEED
+    environment = StickyTimelineEnvironment(**env_kwargs)
+    agent = StickyHypAgent(**_build_sticky_agent_params(_config))
+    state = environment.reset()
+    _sticky_session.update(
+        {
+            "environment": environment,
+            "agent": agent,
+            "state": state,
+            "day": 1,
+            "finished": False,
+            "last_info": None,
+        }
+    )
+    return _sticky_session
 
 
 def fresh_snapshot():
@@ -198,6 +255,25 @@ def current_hyp_frame():
         elapsed=_hyp_session["elapsed"],
     )
     frame["meta"]["finished"] = _hyp_session["finished"]
+    return frame
+
+
+def current_sticky_step_frame():
+    """sticky_step sails + Beta belief frame for the current sticky day."""
+    if _sticky_session["environment"] is None:
+        rebuild_sticky_session()
+    # Keep agent foresight flag in sync with live toggle (no env rebuild)
+    agent = _sticky_session["agent"]
+    agent.learn_stickiness = bool(_sticky_step_opts["learn_stickiness"])
+    agent.perceived_s = float(_sticky_step_opts["perceived_s"])
+    frame = plot_series.sticky_step_frame(
+        agent,
+        _sticky_session["environment"],
+        _sticky_session["state"],
+        day=_sticky_session["day"],
+        last_info=_sticky_session["last_info"],
+    )
+    frame["meta"]["finished"] = _sticky_session["finished"]
     return frame
 
 
@@ -265,6 +341,9 @@ def api_steppable_reset():
     if demo == "hyperbolic_curve":
         reset_hyp_session()
         return jsonify(current_hyp_frame())
+    if demo == "sticky_step":
+        rebuild_sticky_session()
+        return jsonify(current_sticky_step_frame())
     rebuild_session()
     return jsonify(current_sails_frame())
 
@@ -274,6 +353,7 @@ def api_steppable_step():
     """
     visualizing_main: step the env one day (same as matplotlib click loop).
     hyperbolic_curve: advance elapsed by 1h toward delivery (agent stays at day 0).
+    sticky_step: intent → StickyTimelineEnvironment.step (stick/switch roll + belief).
     """
     demo = _steppable_demo()
 
@@ -289,6 +369,34 @@ def api_steppable_step():
         if _hyp_session["elapsed"] >= delay:
             _hyp_session["finished"] = True
         return jsonify(current_hyp_frame())
+
+    if demo == "sticky_step":
+        if _sticky_session["environment"] is None:
+            rebuild_sticky_session()
+            return jsonify(current_sticky_step_frame())
+        if _sticky_session["finished"]:
+            return jsonify(current_sticky_step_frame())
+
+        agent = _sticky_session["agent"]
+        agent.learn_stickiness = bool(_sticky_step_opts["learn_stickiness"])
+        agent.perceived_s = float(_sticky_step_opts["perceived_s"])
+        environment = _sticky_session["environment"]
+        state = _sticky_session["state"]
+        day = _sticky_session["day"]
+
+        intent, _ = agent.choose_action(state, environment)
+        state, finished, info = environment.step(intent)
+        _sticky_session["state"] = state
+        _sticky_session["last_info"] = info
+
+        cap = _config.get("max_steps")
+        hit_cap = cap is not None and day >= cap
+        if finished or hit_cap:
+            _sticky_session["finished"] = True
+            return jsonify(current_sticky_step_frame())
+
+        _sticky_session["day"] = day + 1
+        return jsonify(current_sticky_step_frame())
 
     if _session["environment"] is None:
         rebuild_session()
@@ -322,9 +430,62 @@ def api_steppable_frame():
     demo = _steppable_demo()
     if demo == "hyperbolic_curve":
         return jsonify(current_hyp_frame())
+    if demo == "sticky_step":
+        return jsonify(current_sticky_step_frame())
     if _session["environment"] is None:
         rebuild_session()
     return jsonify(current_sails_frame())
+
+
+@app.route("/api/steppable/sticky_options", methods=["POST"])
+def api_sticky_options():
+    """
+    Update sticky_step foresight options without wiping the Beta belief.
+
+    learn_stickiness: after first stick/switch obs, stick_p_t tracks ŝ;
+    until then foresight keeps the initialised perceived_s.
+    perceived_s / true_stickiness can also be set; changing true_stickiness
+    rebuilds the sticky session (generative process + belief reset).
+    """
+    data = request.get_json(force=True, silent=True) or {}
+    rebuild_needed = False
+
+    if "learn_stickiness" in data:
+        _sticky_step_opts["learn_stickiness"] = bool(data["learn_stickiness"])
+
+    if "perceived_s" in data:
+        try:
+            s = float(data["perceived_s"])
+        except (TypeError, ValueError):
+            return jsonify({"ok": False, "error": "perceived_s must be a number"}), 400
+        if s != s or s < 0.0 or s > 1.0:
+            return jsonify({"ok": False, "error": "perceived_s must be in [0, 1]"}), 400
+        _sticky_step_opts["perceived_s"] = s
+
+    if "true_stickiness" in data:
+        try:
+            s_true = float(data["true_stickiness"])
+        except (TypeError, ValueError):
+            return jsonify({"ok": False, "error": "true_stickiness must be a number"}), 400
+        if s_true != s_true or s_true < 0.0 or s_true > 1.0:
+            return jsonify(
+                {"ok": False, "error": "true_stickiness must be in [0, 1]"}
+            ), 400
+        if abs(s_true - float(_sticky_step_opts["true_stickiness"])) > 1e-12:
+            _sticky_step_opts["true_stickiness"] = s_true
+            rebuild_needed = True
+
+    if rebuild_needed or _sticky_session["environment"] is None:
+        rebuild_sticky_session()
+    else:
+        agent = _sticky_session["agent"]
+        agent.learn_stickiness = bool(_sticky_step_opts["learn_stickiness"])
+        agent.perceived_s = float(_sticky_step_opts["perceived_s"])
+
+    frame = current_sticky_step_frame()
+    frame["ok"] = True
+    frame["options"] = copy.deepcopy(_sticky_step_opts)
+    return jsonify(frame)
 
 
 @app.route("/api/demo/<name>")
@@ -391,6 +552,8 @@ def index():
         default_delay_max=DEFAULT_DELAY_MAX,
         default_delay_step=DEFAULT_DELAY_STEP,
         default_stickiness=DEFAULT_STICKINESS,
+        default_learn_stickiness=DEFAULT_LEARN_STICKINESS,
+        default_true_stickiness=DEFAULT_TRUE_STICKINESS,
     )
 
 
@@ -624,6 +787,13 @@ PAGE = r"""
   }
   #stickyStack.hidden { display: none; }
   #singleView.hidden { display: none; }
+  #stickyStepOpts.hidden { display: none; }
+  #stickyStepOpts {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    gap: 0.75rem 1rem;
+  }
   .sticky-plot-label {
     font-size: 0.72rem;
     text-transform: uppercase;
@@ -697,11 +867,26 @@ PAGE = r"""
         <select id="steppableDemoSelect">
           <option value="visualizing_main">visualizing_main</option>
           <option value="hyperbolic_curve">hyperbolic_curve</option>
+          <option value="sticky_step">sticky_step</option>
         </select>
       </label>
       <button type="button" class="secondary" id="btnReset">Reset</button>
       <button type="button" class="action" id="btnStep">Step</button>
       <span id="stepHint">Step advances the selected demo</span>
+      <div id="stickyStepOpts" class="hidden">
+        <label>Learn stickiness
+          <div class="vision-toggle">
+            <button type="button" id="learnStickinessOff">Off</button>
+            <button type="button" id="learnStickinessOn">On</button>
+          </div>
+        </label>
+        <label style="min-width:120px;">Perceived s
+          <input type="number" id="stickyStepPerceivedS" value="{{ default_stickiness }}" min="0" max="1" step="0.01"/>
+        </label>
+        <label style="min-width:120px;">True stickiness
+          <input type="number" id="stickyStepTrueS" value="{{ default_true_stickiness }}" min="0" max="1" step="0.01"/>
+        </label>
+      </div>
     </div>
     <div id="chromeNon" class="chrome hidden">
       <label style="flex-direction:row;align-items:center;gap:0.5rem;">
@@ -761,11 +946,15 @@ const DEFAULT_VISION = DEFAULT_CONFIG.vision;
 const DEFAULT_DELAY_MAX = {{ default_delay_max }};
 const DEFAULT_DELAY_STEP = {{ default_delay_step }};
 const DEFAULT_STICKINESS = {{ default_stickiness|tojson }};
+const DEFAULT_LEARN_STICKINESS = {{ default_learn_stickiness|tojson }};
+const DEFAULT_TRUE_STICKINESS = {{ default_true_stickiness|tojson }};
 
 let vision = DEFAULT_VISION;
+let learnStickiness = !!DEFAULT_LEARN_STICKINESS;
 let section = "steppable";
 let stickyClickBound = false;
 let configTimer = null;
+let stickyOptsTimer = null;
 let finished = false;
 
 const metaEl = document.getElementById("meta");
@@ -773,6 +962,7 @@ const metaGraphEl = document.getElementById("metaGraph");
 const metaSailsEl = document.getElementById("metaSails");
 const singleViewEl = document.getElementById("singleView");
 const stickyStackEl = document.getElementById("stickyStack");
+const stickyStepOptsEl = document.getElementById("stickyStepOpts");
 const ssValueEl = document.getElementById("ssValue");
 const ssDelayEl = document.getElementById("ssDelay");
 const llValueEl = document.getElementById("llValue");
@@ -783,6 +973,10 @@ const discountFactorEl = document.getElementById("discountFactor");
 const maxStepsEl = document.getElementById("maxSteps");
 const visionShort = document.getElementById("visionShort");
 const visionLong = document.getElementById("visionLong");
+const learnStickinessOff = document.getElementById("learnStickinessOff");
+const learnStickinessOn = document.getElementById("learnStickinessOn");
+const stickyStepPerceivedSEl = document.getElementById("stickyStepPerceivedS");
+const stickyStepTrueSEl = document.getElementById("stickyStepTrueS");
 const demoSelect = document.getElementById("demoSelect");
 const steppableDemoSelect = document.getElementById("steppableDemoSelect");
 const delayMaxEl = document.getElementById("delayMax");
@@ -807,7 +1001,11 @@ function applyDefaultsToForm() {
   discountFactorEl.value = DEFAULT_CONFIG.discount_factor;
   maxStepsEl.value = optionalToInput(DEFAULT_CONFIG.max_steps);
   vision = DEFAULT_CONFIG.vision;
+  learnStickiness = !!DEFAULT_LEARN_STICKINESS;
+  stickyStepPerceivedSEl.value = String(DEFAULT_STICKINESS);
+  stickyStepTrueSEl.value = String(DEFAULT_TRUE_STICKINESS);
   syncVisionButtons();
+  syncLearnStickinessButtons();
   clearConfigError();
 }
 
@@ -816,9 +1014,14 @@ function steppableDemo() {
 }
 
 function syncStepHint() {
-  if (steppableDemo() === "hyperbolic_curve") {
+  const demo = steppableDemo();
+  stickyStepOptsEl.classList.toggle("hidden", demo !== "sticky_step");
+  if (demo === "hyperbolic_curve") {
     stepHint.textContent =
       "hyperbolic_curve — Step moves the reward one hour closer to day 0 (axes stay fixed)";
+  } else if (demo === "sticky_step") {
+    stepHint.textContent =
+      "sticky_step — Step rolls stick/switch, updates Beta belief; Learn On uses ŝ in foresight";
   } else {
     stepHint.textContent =
       "visualizing_main — Step advances one decision day in the environment";
@@ -831,6 +1034,12 @@ function syncVisionButtons() {
   visionLong.classList.toggle("active", vision === "long");
 }
 syncVisionButtons();
+
+function syncLearnStickinessButtons() {
+  learnStickinessOff.classList.toggle("active", !learnStickiness);
+  learnStickinessOn.classList.toggle("active", learnStickiness);
+}
+syncLearnStickinessButtons();
 
 function parseOptionalInt(raw) {
   const s = String(raw).trim();
@@ -906,6 +1115,78 @@ visionLong.addEventListener("click", () => {
   scheduleConfig();
 });
 
+learnStickinessOff.addEventListener("click", () => {
+  learnStickiness = false;
+  syncLearnStickinessButtons();
+  scheduleStickyOptions();
+});
+learnStickinessOn.addEventListener("click", () => {
+  learnStickiness = true;
+  syncLearnStickinessButtons();
+  scheduleStickyOptions();
+});
+
+function parseStickinessDraft(raw) {
+  // Allow in-progress decimals ("0.", ".", "") without rewriting the input.
+  const s = String(raw).trim();
+  if (s === "" || s === "." || s === "-." || s.endsWith(".")) return null;
+  const n = Number(s);
+  if (!Number.isFinite(n)) return null;
+  return Math.max(0, Math.min(1, Math.round(n * 100) / 100));
+}
+
+async function pushStickyOptions({ normalizeInputs = false } = {}) {
+  let perceived_s = parseStickinessDraft(stickyStepPerceivedSEl.value);
+  let true_stickiness = parseStickinessDraft(stickyStepTrueSEl.value);
+  if (normalizeInputs) {
+    perceived_s = clampStickiness(stickyStepPerceivedSEl.value);
+    true_stickiness = clampStickiness(stickyStepTrueSEl.value);
+    stickyStepPerceivedSEl.value = String(perceived_s);
+    stickyStepTrueSEl.value = String(true_stickiness);
+  } else if (perceived_s == null || true_stickiness == null) {
+    // Still typing a decimal — wait for a complete number.
+    return null;
+  }
+  const res = await fetch("/api/steppable/sticky_options", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      learn_stickiness: learnStickiness,
+      perceived_s,
+      true_stickiness,
+    }),
+  });
+  if (!res.ok) throw new Error("HTTP " + res.status);
+  const payload = await res.json();
+  draw(payload);
+  return payload;
+}
+
+function scheduleStickyOptions() {
+  if (steppableDemo() !== "sticky_step" || section !== "steppable") return;
+  clearTimeout(stickyOptsTimer);
+  stickyOptsTimer = setTimeout(async () => {
+    try {
+      await pushStickyOptions();
+    } catch (err) {
+      metaEl.textContent = "Sticky options failed: " + err;
+    }
+  }, 40);
+}
+
+stickyStepPerceivedSEl.addEventListener("input", scheduleStickyOptions);
+stickyStepTrueSEl.addEventListener("input", scheduleStickyOptions);
+stickyStepPerceivedSEl.addEventListener("change", () => {
+  pushStickyOptions({ normalizeInputs: true }).catch((err) => {
+    metaEl.textContent = "Sticky options failed: " + err;
+  });
+});
+stickyStepTrueSEl.addEventListener("change", () => {
+  pushStickyOptions({ normalizeInputs: true }).catch((err) => {
+    metaEl.textContent = "Sticky options failed: " + err;
+  });
+});
+
 async function pushConfig() {
   const cfg = currentConfig();
   // Client-side guard so both-none fails immediately with highlighted fields
@@ -977,6 +1258,30 @@ function fillMeta(el, payload) {
     el.textContent =
       `delays = [${(m.delays || []).join(", ")}]h · LL = ${m.reward_LL} · ` +
       `horizon = ${m.horizon} · discount_factor = ${m.discount_factor}`;
+  } else if (payload.kind === "sticky_step") {
+    const av = m.action_values || {};
+    const dayBit = m.day != null ? `Day ${m.day} · ` : "";
+    const learnBit = m.learn_stickiness ? "learn On" : "learn Off";
+    const sHat =
+      m.s_hat != null ? Number(m.s_hat).toFixed(3) : "—";
+    const perc =
+      m.perceived_s != null ? Number(m.perceived_s).toFixed(3) : "—";
+    let rollBit = "";
+    if (m.last_realized != null) {
+      const stuckLabel =
+        m.last_stuck == null ? "free" : m.last_stuck ? "stick" : "switch";
+      rollBit =
+        ` · last intent=${m.last_intent} → realized=${m.last_realized} (${stuckLabel})`;
+    }
+    const doneBit = m.finished ? " · finished" : "";
+    el.innerHTML =
+      dayBit +
+      `${learnBit} · ŝ=${sHat} · foresight s=${perc} · s_true=${m.true_stickiness} · ` +
+      `α=${Number(m.alpha).toFixed(1)} β=${Number(m.beta).toFixed(1)} · ` +
+      `<span class="choice">would choose ${m.choice}</span>` +
+      ` · snack = ${Number(av.snack).toFixed(4)} · resist = ${Number(av.resist).toFixed(4)}` +
+      rollBit +
+      doneBit;
   } else if (m.action_values) {
     const av = m.action_values;
     const dayBit = m.day != null ? `Day ${m.day} · ` : "";
@@ -1156,6 +1461,18 @@ steppableDemoSelect.addEventListener("change", async () => {
   finished = false;
   btnStep.disabled = false;
   try {
+    if (steppableDemo() === "sticky_step") {
+      // Apply live learn / s knobs, then reset the sticky run
+      await fetch("/api/steppable/sticky_options", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          learn_stickiness: learnStickiness,
+          perceived_s: clampStickiness(stickyStepPerceivedSEl.value),
+          true_stickiness: clampStickiness(stickyStepTrueSEl.value),
+        }),
+      });
+    }
     const res = await fetch("/api/steppable/reset", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -1216,11 +1533,21 @@ btnReset.addEventListener("click", async () => {
   }
 });
 
-btnResetDefaults.addEventListener("click", () => {
+btnResetDefaults.addEventListener("click", async () => {
   clearTimeout(configTimer);
+  clearTimeout(stickyOptsTimer);
   applyDefaultsToForm();
   setStickiness(DEFAULT_STICKINESS);
-  applyConfigAndRefresh();
+  try {
+    await pushConfig();
+    if (steppableDemo() === "sticky_step") {
+      await pushStickyOptions();
+    } else {
+      await refresh();
+    }
+  } catch (err) {
+    if (!err.configError) metaEl.textContent = "Reset defaults failed: " + err;
+  }
 });
 
 btnStep.addEventListener("click", async () => {
