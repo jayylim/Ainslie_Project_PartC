@@ -1,8 +1,9 @@
 """
 Maximum SS that can still be resisted vs stickiness s, at decision node 1.
 
-One curve per LL delay. LL reward is fixed (from env_params). Uses the
-sticky_decisions model:
+Curves for LL delays scaled from env_params (selected LL delay always
+included). Set SHOW_OTHER_DELAYS = False to plot only that selected delay.
+LL reward is fixed (from env_params). Uses the sticky_decisions model:
 
     expected_day_value = sticking * V_hyp(same) + (1 - sticking) * V_hyp(other)
 
@@ -38,8 +39,8 @@ from environments.timeline import TimelineEnvironment
 from main import env_params
 from sticky_decisions import stick_p_t
 
-# === Editable: LL delays to plot (hours after choice) ===
-ll_delays = list(range(0, 25, 4))  # step size last number
+# === Editable toggles / sweep ===
+SHOW_OTHER_DELAYS = True  # False = only the env-selected LL delay curve
 
 # Stickiness sweep (for plotting various stickiness values)
 stickiness_min, stickiness_max, n_stickiness_points = 0.0, 1.0, 100
@@ -82,6 +83,24 @@ def max_ss_resisted(agent, s, delay_SS, delay_LL, reward_LL, horizon, decision_i
     return solve_x
 
 
+def ll_delays_for_env(decision_interval, main_delay_LL, show_other_delays):
+    """
+    Delay family scaled from the selected env: step ≈ interval/6, span one interval.
+    Always includes the configured LL delay; other curves optional via toggle.
+    """
+    main_delay_LL = int(main_delay_LL)
+    if not show_other_delays:
+        return [main_delay_LL]
+
+    delay_step = max(1, int(decision_interval) // 6)
+    delay_max = max(int(decision_interval), main_delay_LL)
+    # not including 0h as it is a straight line
+    delays = list(range(delay_step, delay_max + 1, delay_step))
+    if main_delay_LL > 0 and main_delay_LL not in delays:
+        delays = sorted(delays + [main_delay_LL])
+    return delays
+
+
 environment = TimelineEnvironment(**env_params)
 agent = HypAgent(**agent_params)
 state = environment.reset()
@@ -91,6 +110,8 @@ decision_interval = environment.decision_interval
 discount_factor = agent.discount_factor
 delay_SS = environment.rewards["SS"]["delay"]
 reward_LL = environment.rewards["LL"]["value"]
+main_delay_LL = int(environment.rewards["LL"]["delay"])
+ll_delays = ll_delays_for_env(decision_interval, main_delay_LL, SHOW_OTHER_DELAYS)
 
 # build x-axis values
 stickiness_x = [
@@ -100,7 +121,7 @@ stickiness_x = [
 ]
 
 # One hue: short delays (top of chart) lightest / most transparent;
-# longer delays darker / more opaque
+# longer delays darker / more opaque. Selected env delay drawn in black.
 base_rgb = matplotlib.colors.to_rgb("#1f4e79")
 delay_lo, delay_hi = min(ll_delays), max(ll_delays)
 delay_span = max(delay_hi - delay_lo, 1)
@@ -114,30 +135,47 @@ for delay_LL in ll_delays:
         )
         for s in stickiness_x
     ]
-    # 0 = shortest delay, 1 = longest
-    t = (delay_LL - delay_lo) / delay_span
-    # short delay → light + transparent; long delay → dark + opaque
-    # lightness capped so short-delay lines stay visible on white
-    lightness = 0.55 - 0.55 * t
-    color = tuple(c + (1.0 - c) * lightness for c in base_rgb)
-    # transparency capped at ~30% (alpha >= 0.70)
-    alpha = 0.70 + 0.30 * t
+    is_main = delay_LL == main_delay_LL
+    if is_main:
+        color, alpha, linewidth = "#000000", 1.0, 2.8
+        label = f"LL delay = {delay_LL}h"
+    else:
+        # 0 = shortest delay, 1 = longest
+        t = (delay_LL - delay_lo) / delay_span
+        # short delay → light + transparent; long delay → dark + opaque
+        # lightness capped so short-delay lines stay visible on white
+        lightness = 0.55 - 0.55 * t
+        color = tuple(c + (1.0 - c) * lightness for c in base_rgb)
+        # transparency capped at ~30% (alpha >= 0.70)
+        alpha = 0.70 + 0.30 * t
+        linewidth = 1.8
+        label = f"LL delay = {delay_LL}h"
     axes.plot(
         stickiness_x,
         max_ss_values,
         color=color,
         alpha=alpha,
-        label=f"LL delay = {delay_LL}h",
+        linewidth=linewidth,
+        label=label,
+        zorder=3 if is_main else 2,
     )
 
-axes.set_xlabel("Stickiness s")
-axes.set_ylabel("Max SS resisted (min SS to choose snack over resist)")
+axes.set_xlabel("Perceived stickiness (s)")
+axes.set_ylabel("Max SS-value resisted)")
 axes.set_title(
-    f"Max SS resisted | "
-    f"Current Settings: LL={reward_LL}, horizon={horizon}, discount_factor={discount_factor}"
-) 
+    "Max SS Resisted over Perceived Stickiness",
+    pad=30,
+)
+axes.text(0.5, 1.02,
+    f"LL value = {reward_LL} @ {main_delay_LL}h | "
+    f"Bundling horizon = {horizon}, k = {discount_factor}",
+    transform=axes.transAxes,
+    ha="center",
+    va="bottom",
+    fontsize=10,
+)
 axes.set_xlim(stickiness_min, stickiness_max)
-axes.set_ylim(0, 8)
+axes.set_ylim(0, 10)
 axes.yaxis.set_major_locator(MultipleLocator(1))
 axes.yaxis.set_minor_locator(MultipleLocator(0.25))
 axes.grid(True, which="major", alpha=0.4)
