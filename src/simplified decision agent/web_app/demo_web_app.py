@@ -3,7 +3,7 @@ Unified interactive web app for the visual demos.
 
 Shared top-level params (rewards, delays, env length, horizon, vision).
 Three sections:
-  - Steppable: visualizing_main | hyperbolic_curve | sticky_step
+  - Steppable: visualizing_main | hyperbolic_curve | hyperbolic_ss_ll | sticky_step
   - Non-steppable: visualise_sails | aggregate_sail
   - Sticky: sticky_graph + visualise_sticky_sails (stacked; click current curve sets s)
 
@@ -85,6 +85,12 @@ _session = {
 
 # Hyperbolic approach: agent fixed at day 0; elapsed hours toward LL delivery
 _hyp_session = {
+    "elapsed": 0,
+    "finished": False,
+}
+
+# SS+LL approach (preference highlight); LL + SS value from shared panel
+_hyp_ss_ll_session = {
     "elapsed": 0,
     "finished": False,
 }
@@ -187,11 +193,12 @@ def rebuild_session(cfg=None):
             "environment": environment,
             "agent": agent,
             "state": state,
-            "day": 1,
+            "day": 0,
             "finished": False,
         }
     )
     reset_hyp_session()
+    reset_hyp_ss_ll_session()
     rebuild_sticky_session()
     return _session
 
@@ -200,6 +207,12 @@ def reset_hyp_session():
     """Restart hyperbolic approach at elapsed = 0 (full remaining delay)."""
     _hyp_session.update({"elapsed": 0, "finished": False})
     return _hyp_session
+
+
+def reset_hyp_ss_ll_session():
+    """Restart SS+LL approach at elapsed = 0."""
+    _hyp_ss_ll_session.update({"elapsed": 0, "finished": False})
+    return _hyp_ss_ll_session
 
 
 def rebuild_sticky_session():
@@ -218,7 +231,7 @@ def rebuild_sticky_session():
             "environment": environment,
             "agent": agent,
             "state": state,
-            "day": 1,
+            "day": 0,
             "finished": False,
             "last_info": None,
         }
@@ -255,6 +268,19 @@ def current_hyp_frame():
         elapsed=_hyp_session["elapsed"],
     )
     frame["meta"]["finished"] = _hyp_session["finished"]
+    return frame
+
+
+def current_hyp_ss_ll_frame():
+    """hyperbolic_ss_ll frame: SS+LL approaching day 0 (shared params)."""
+    frame = plot_series.hyperbolic_ss_ll_frame(
+        _config["ss_value"],
+        _config["ll_value"],
+        _config["ll_delay"],
+        _config["discount_factor"],
+        elapsed=_hyp_ss_ll_session["elapsed"],
+    )
+    frame["meta"]["finished"] = _hyp_ss_ll_session["finished"]
     return frame
 
 
@@ -341,6 +367,9 @@ def api_steppable_reset():
     if demo == "hyperbolic_curve":
         reset_hyp_session()
         return jsonify(current_hyp_frame())
+    if demo == "hyperbolic_ss_ll":
+        reset_hyp_ss_ll_session()
+        return jsonify(current_hyp_ss_ll_frame())
     if demo == "sticky_step":
         rebuild_sticky_session()
         return jsonify(current_sticky_step_frame())
@@ -353,6 +382,7 @@ def api_steppable_step():
     """
     visualizing_main: step the env one day (same as matplotlib click loop).
     hyperbolic_curve: advance elapsed by 1h toward delivery (agent stays at day 0).
+    hyperbolic_ss_ll: same approach for SS + LL (SS delay = ¾ LL; preference highlight).
     sticky_step: intent → StickyTimelineEnvironment.step (stick/switch roll + belief).
     """
     demo = _steppable_demo()
@@ -369,6 +399,18 @@ def api_steppable_step():
         if _hyp_session["elapsed"] >= delay:
             _hyp_session["finished"] = True
         return jsonify(current_hyp_frame())
+
+    if demo == "hyperbolic_ss_ll":
+        if _hyp_ss_ll_session["finished"]:
+            return jsonify(current_hyp_ss_ll_frame())
+        delay = int(_config["ll_delay"])
+        if _hyp_ss_ll_session["elapsed"] >= delay:
+            _hyp_ss_ll_session["finished"] = True
+            return jsonify(current_hyp_ss_ll_frame())
+        _hyp_ss_ll_session["elapsed"] += 1
+        if _hyp_ss_ll_session["elapsed"] >= delay:
+            _hyp_ss_ll_session["finished"] = True
+        return jsonify(current_hyp_ss_ll_frame())
 
     if demo == "sticky_step":
         if _sticky_session["environment"] is None:
@@ -389,8 +431,9 @@ def api_steppable_step():
         _sticky_session["state"] = state
         _sticky_session["last_info"] = info
 
+        # day is 0-based label; cap still counts env steps (same as max_steps)
         cap = _config.get("max_steps")
-        hit_cap = cap is not None and day >= cap
+        hit_cap = cap is not None and (day + 1) >= cap
         if finished or hit_cap:
             _sticky_session["finished"] = True
             return jsonify(current_sticky_step_frame())
@@ -415,8 +458,9 @@ def api_steppable_step():
     _session["state"] = state
 
     # visualizing_main: while not finished and (max_steps is None or steps < max_steps)
+    # day is 0-based label; cap still counts env steps (same as max_steps)
     cap = _config.get("max_steps")
-    hit_cap = cap is not None and day >= cap
+    hit_cap = cap is not None and (day + 1) >= cap
     if finished or hit_cap:
         _session["finished"] = True
         return jsonify(current_sails_frame())
@@ -425,11 +469,27 @@ def api_steppable_step():
     return jsonify(current_sails_frame())
 
 
+@app.route("/api/steppable/step_back", methods=["POST"])
+def api_steppable_step_back():
+    """
+    hyperbolic_ss_ll only: rewind elapsed by 1h (clears finished if rewinding).
+    """
+    demo = _steppable_demo()
+    if demo != "hyperbolic_ss_ll":
+        return jsonify({"ok": False, "error": "step_back only for hyperbolic_ss_ll"}), 400
+    if _hyp_ss_ll_session["elapsed"] > 0:
+        _hyp_ss_ll_session["elapsed"] -= 1
+    _hyp_ss_ll_session["finished"] = False
+    return jsonify(current_hyp_ss_ll_frame())
+
+
 @app.route("/api/steppable/frame")
 def api_steppable_frame():
     demo = _steppable_demo()
     if demo == "hyperbolic_curve":
         return jsonify(current_hyp_frame())
+    if demo == "hyperbolic_ss_ll":
+        return jsonify(current_hyp_ss_ll_frame())
     if demo == "sticky_step":
         return jsonify(current_sticky_step_frame())
     if _session["environment"] is None:
@@ -788,6 +848,7 @@ PAGE = r"""
   #stickyStack.hidden { display: none; }
   #singleView.hidden { display: none; }
   #stickyStepOpts.hidden { display: none; }
+  #btnStepBack.hidden { display: none; }
   #stickyStepOpts {
     display: flex;
     flex-wrap: wrap;
@@ -867,10 +928,12 @@ PAGE = r"""
         <select id="steppableDemoSelect">
           <option value="visualizing_main">visualizing_main</option>
           <option value="hyperbolic_curve">hyperbolic_curve</option>
+          <option value="hyperbolic_ss_ll">hyperbolic_ss_ll</option>
           <option value="sticky_step">sticky_step</option>
         </select>
       </label>
       <button type="button" class="secondary" id="btnReset">Reset</button>
+      <button type="button" class="secondary hidden" id="btnStepBack">Step back</button>
       <button type="button" class="action" id="btnStep">Step</button>
       <span id="stepHint">Step advances the selected demo</span>
       <div id="stickyStepOpts" class="hidden">
@@ -983,6 +1046,7 @@ const delayMaxEl = document.getElementById("delayMax");
 const delayStepEl = document.getElementById("delayStep");
 const stickinessEl = document.getElementById("stickiness");
 const btnStep = document.getElementById("btnStep");
+const btnStepBack = document.getElementById("btnStepBack");
 const btnReset = document.getElementById("btnReset");
 const btnResetDefaults = document.getElementById("btnResetDefaults");
 const stepHint = document.getElementById("stepHint");
@@ -1016,9 +1080,13 @@ function steppableDemo() {
 function syncStepHint() {
   const demo = steppableDemo();
   stickyStepOptsEl.classList.toggle("hidden", demo !== "sticky_step");
+  btnStepBack.classList.toggle("hidden", demo !== "hyperbolic_ss_ll");
   if (demo === "hyperbolic_curve") {
     stepHint.textContent =
       "hyperbolic_curve — Step moves the reward one hour closer to day 0 (axes stay fixed)";
+  } else if (demo === "hyperbolic_ss_ll") {
+    stepHint.textContent =
+      "hyperbolic_ss_ll — Shared SS/LL values + LL delay (SS delay = ¾ LL); Step / Step back; preferred option highlighted";
   } else if (demo === "sticky_step") {
     stepHint.textContent =
       "sticky_step — Step rolls stick/switch, updates Beta belief; Learn On uses ŝ in foresight";
@@ -1303,6 +1371,24 @@ function fillMeta(el, payload) {
       `<span class="choice">V(day 0) = ${m.perceived.toFixed(4)}</span>` +
       ` · k = ${m.discount_factor}` +
       doneBit;
+  } else if (payload.kind === "hyperbolic_ss_ll") {
+    const doneBit = m.finished ? " · finished" : "";
+    const pref =
+      m.preference === "indifferent"
+        ? "indifferent"
+        : m.preference === "none"
+          ? "both delivered"
+          : "prefers " + m.preference;
+    const vss =
+      m.v_ss == null ? "delivered" : Number(m.v_ss).toFixed(4);
+    const vll =
+      m.v_ll == null ? "delivered" : Number(m.v_ll).toFixed(4);
+    el.innerHTML =
+      `elapsed = ${m.elapsed}h · SS rem = ${m.remaining_ss}h · LL rem = ${m.remaining_ll}h · ` +
+      `<span class="choice">${pref}</span>` +
+      ` · V_SS = ${vss} · V_LL = ${vll}` +
+      ` · SS=${m.ss_value}@${m.ss_delay}h (=¾ LL) LL=${m.ll_value}@${m.ll_delay}h k=${m.discount_factor}` +
+      doneBit;
   } else if (m.perceived != null) {
     el.textContent = `perceived at t=0 = ${m.perceived.toFixed(4)}`;
   } else {
@@ -1311,6 +1397,9 @@ function fillMeta(el, payload) {
   if (m.finished != null) {
     finished = !!m.finished;
     btnStep.disabled = finished;
+  }
+  if (payload.kind === "hyperbolic_ss_ll") {
+    btnStepBack.disabled = !(m.elapsed > 0);
   }
 }
 
@@ -1561,6 +1650,20 @@ btnStep.addEventListener("click", async () => {
     draw(await res.json());
   } catch (err) {
     metaEl.textContent = "Step failed: " + err;
+  }
+});
+
+btnStepBack.addEventListener("click", async () => {
+  try {
+    const res = await fetch("/api/steppable/step_back", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ demo: steppableDemo() }),
+    });
+    if (!res.ok) throw new Error("HTTP " + res.status);
+    draw(await res.json());
+  } catch (err) {
+    metaEl.textContent = "Step back failed: " + err;
   }
 });
 

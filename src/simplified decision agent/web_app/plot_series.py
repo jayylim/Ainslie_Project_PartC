@@ -874,11 +874,29 @@ def sticky_step_frame(agent, environment, state, *, day=None, last_info=None):
     ]
 
     day_bit = f"Day {day}  |  " if day is not None else ""
+
+    # Realized action from the previous step (None on day 0 before any roll)
+    last_realized = last_info.get("realized") if last_info else None
+    last_stuck = last_info.get("stuck") if last_info else None
+    if last_realized is None:
+        last_action_html = "Last action: —"
+        last_action_label = None
+    else:
+        if last_stuck is None:
+            roll = "free"
+        elif last_stuck:
+            roll = "stick"
+        else:
+            roll = "switch"
+        last_action_html = f"Last action: <b>{last_realized}</b> ({roll})"
+        last_action_label = f"{last_realized} ({roll})"
+
     title = {
         "text": (
             f"{day_bit}Perceived stickiness={perceived_s:.3f} | "
             f"True stickiness={true_s}  |  horizon={n}  |  "
-            f"<b>Agent would choose {intent}</b>"
+            f"<b>Agent would choose {intent}</b><br>"
+            f"{last_action_html}"
         ),
         "font": {"size": 15, "color": "#1a1d23"},
     }
@@ -905,11 +923,12 @@ def sticky_step_frame(agent, environment, state, *, day=None, last_info=None):
         "beta": beta_belief.beta,
         "n_stick": beta_belief.n_stick(),
         "n_switch": beta_belief.n_switch(),
+        "last_action_label": last_action_label,
     }
     if last_info:
         meta["last_intent"] = last_info.get("intent")
-        meta["last_realized"] = last_info.get("realized")
-        meta["last_stuck"] = last_info.get("stuck")
+        meta["last_realized"] = last_realized
+        meta["last_stuck"] = last_stuck
 
     return {
         "kind": "sticky_step",
@@ -964,7 +983,7 @@ def sticky_step_frame(agent, environment, state, *, day=None, last_info=None):
                 "x": 0.0,
                 "xref": "paper",
             },
-            "margin": {"l": 60, "r": 24, "t": 72, "b": 90},
+            "margin": {"l": 60, "r": 24, "t": 92, "b": 90},
             "height": 700,
         },
         "meta": meta,
@@ -1195,14 +1214,14 @@ def hyperbolic_frame(reward, initial_delay, discount_factor, *, elapsed=0):
         "layout": {
             "title": {
                 "text": (
-                    f"Reward approaching day 0  |  elapsed = {elapsed}h  |  "
+                    f"Reward approaching | Time elapsed = {elapsed}h  |  "
                     f"remaining = {remaining}h  |  "
                     f"<b>V(0) = {perceived:.2f}</b>"
                 ),
                 "font": {"size": 15, "color": "#1a1d23"},
             },
             "xaxis": {
-                "title": "Time steps from now (agent at 0)",
+                "title": "Hours to reward",
                 "range": [-0.2, x_hi],
                 "autorange": False,
                 "fixedrange": True,
@@ -1228,6 +1247,314 @@ def hyperbolic_frame(reward, initial_delay, discount_factor, *, elapsed=0):
             "discount_factor": k,
             "perceived": perceived,
             "finished": elapsed >= initial_delay,
+        },
+    }
+
+
+def ss_delay_from_ll(ll_delay):
+    """SS delay = ¾ of LL delay, rounded to the nearest hour (≥ 0)."""
+    return max(0, int(round(0.75 * int(ll_delay))))
+
+
+def hyperbolic_ss_ll_frame(
+    ss_value, ll_value, ll_delay, discount_factor, *, elapsed=0
+):
+    """
+    SS and LL rewards approaching an agent fixed at t=0.
+
+    Same motion as ``hyperbolic_frame``, but both outcomes share one timeline.
+    LL value/delay and SS value come from the shared panel; SS delay is derived
+    as ¾ × LL delay (rounded to nearest hour). Perceived values use
+    V = reward / (1 + k * remaining). The preferred option is emphasised.
+    """
+    ss_value = float(ss_value)
+    ll_value = float(ll_value)
+    ll_delay = int(ll_delay)
+    ss_delay = ss_delay_from_ll(ll_delay)
+    k = float(discount_factor)
+    max_delay = max(ss_delay, ll_delay)
+    elapsed = max(0, min(int(elapsed), max_delay))
+
+    def V(reward, distance):
+        return reward / (1.0 + k * distance)
+
+    rem_ss = max(0, ss_delay - elapsed)
+    rem_ll = max(0, ll_delay - elapsed)
+    # Still choosable at the delivery instant (remaining == 0); past that → delivered.
+    ss_available = elapsed <= ss_delay
+    ll_available = elapsed <= ll_delay
+    v_ss = V(ss_value, rem_ss) if ss_available else None
+    v_ll = V(ll_value, rem_ll) if ll_available else None
+
+    if ss_available and ll_available:
+        if abs(v_ss - v_ll) < 1e-12:
+            preference = "indifferent"
+        elif v_ss > v_ll:
+            preference = "SS"
+        else:
+            preference = "LL"
+    elif ss_available:
+        preference = "SS"
+    elif ll_available:
+        preference = "LL"
+    else:
+        preference = "none"
+
+    def sail(reward, remaining):
+        xs = list(range(int(remaining) + 1))
+        ys = [V(reward, remaining - t) for t in xs]
+        return xs, ys
+
+    xs_ss, ys_ss = sail(ss_value, rem_ss) if ss_available else ([0], [ss_value])
+    xs_ll, ys_ll = sail(ll_value, rem_ll) if ll_available else ([0], [ll_value])
+
+    x_hi = max(max_delay, 1)
+    y_hi = max(ss_value, ll_value) + 1.0
+
+    def option_style(name, available):
+        if not available:
+            return {
+                "width": 1.2,
+                "marker": 7,
+                "opacity": 0.2,
+                "dash": "dot",
+                "suffix": " (delivered)",
+                "chosen": False,
+            }
+        # Indifferent: both get emphasis so the tie is visible.
+        chosen = preference == "indifferent" or preference == name
+        return {
+            "width": 3.6 if chosen else 1.8,
+            "marker": 14 if chosen else 9,
+            "opacity": 1.0 if chosen else 0.45,
+            "dash": "solid",
+            "suffix": (
+                " ="
+                if preference == "indifferent"
+                else (" ★" if chosen else "")
+            ),
+            "chosen": chosen,
+        }
+
+    ss_style = option_style("SS", ss_available)
+    ll_style = option_style("LL", ll_available)
+
+    def now_label(name, value, available):
+        if not available:
+            return f"{name} delivered"
+        return f"{name} {value:.2f}"
+
+    traces = [
+        {
+            "type": "scatter",
+            "mode": "lines",
+            "x": xs_ss,
+            "y": ys_ss,
+            "line": {
+                "color": COLORS["snack"],
+                "width": ss_style["width"],
+                "dash": ss_style["dash"],
+            },
+            "opacity": ss_style["opacity"],
+            "name": f"SS sail{ss_style['suffix']}",
+            "hovertemplate": "SS t=%{x}<br>V=%{y:.3f}<extra></extra>",
+        },
+        {
+            "type": "scatter",
+            "mode": "markers+text",
+            "x": [0],
+            "y": [v_ss if ss_available else ss_value],
+            "text": [
+                now_label("SS", v_ss if ss_available else ss_value, ss_available)
+            ],
+            "textposition": "top center",
+            "textfont": {
+                "color": COLORS["snack"],
+                "size": 14 if preference == "SS" else 12,
+                "family": (
+                    "Arial Black, sans-serif"
+                    if preference == "SS"
+                    else "Arial, sans-serif"
+                ),
+            },
+            "marker": {
+                "size": ss_style["marker"],
+                "color": COLORS["snack"],
+                "opacity": ss_style["opacity"],
+                "line": {
+                    "width": 2 if preference == "SS" else 0,
+                    "color": "#1a1d23",
+                },
+            },
+            "name": f"SS at now{ss_style['suffix']}",
+            "hovertemplate": (
+                f"SS V(0)={v_ss:.3f}<extra></extra>"
+                if ss_available
+                else "SS delivered<extra></extra>"
+            ),
+            "showlegend": False,
+        },
+        {
+            "type": "scatter",
+            "mode": "lines",
+            "x": xs_ll,
+            "y": ys_ll,
+            "line": {
+                "color": COLORS["resist"],
+                "width": ll_style["width"],
+                "dash": ll_style["dash"],
+            },
+            "opacity": ll_style["opacity"],
+            "name": f"LL sail{ll_style['suffix']}",
+            "hovertemplate": "LL t=%{x}<br>V=%{y:.3f}<extra></extra>",
+        },
+        {
+            "type": "scatter",
+            "mode": "markers+text",
+            "x": [0],
+            "y": [v_ll if ll_available else ll_value],
+            "text": [
+                now_label("LL", v_ll if ll_available else ll_value, ll_available)
+            ],
+            "textposition": (
+                "bottom center"
+                if (
+                    ss_available
+                    and ll_available
+                    and abs(v_ss - v_ll) < 0.35
+                )
+                else "top center"
+            ),
+            "textfont": {
+                "color": COLORS["resist"],
+                "size": 14 if preference == "LL" else 12,
+                "family": (
+                    "Arial Black, sans-serif"
+                    if preference == "LL"
+                    else "Arial, sans-serif"
+                ),
+            },
+            "marker": {
+                "size": ll_style["marker"],
+                "color": COLORS["resist"],
+                "opacity": ll_style["opacity"],
+                "line": {
+                    "width": 2 if preference == "LL" else 0,
+                    "color": "#1a1d23",
+                },
+            },
+            "name": f"LL at now{ll_style['suffix']}",
+            "hovertemplate": (
+                f"LL V(0)={v_ll:.3f}<extra></extra>"
+                if ll_available
+                else "LL delivered<extra></extra>"
+            ),
+            "showlegend": False,
+        },
+    ]
+
+    shapes = []
+    if ss_available:
+        shapes.append(
+            {
+                "type": "line",
+                "x0": rem_ss,
+                "x1": rem_ss,
+                "y0": 0,
+                "y1": 1,
+                "yref": "paper",
+                "line": {"color": COLORS["snack"], "width": 1, "dash": "dash"},
+                "opacity": 0.55,
+            }
+        )
+    if ll_available:
+        shapes.append(
+            {
+                "type": "line",
+                "x0": rem_ll,
+                "x1": rem_ll,
+                "y0": 0,
+                "y1": 1,
+                "yref": "paper",
+                "line": {"color": COLORS["resist"], "width": 1, "dash": "dash"},
+                "opacity": 0.55,
+            }
+        )
+
+    if preference == "indifferent":
+        pref_html = "<b>indifferent</b>"
+    elif preference == "none":
+        pref_html = "<b>both delivered</b>"
+    else:
+        pref_html = f"<b>prefers {preference}</b>"
+
+    param_note = (
+        f"SS = {ss_value:g} @ {ss_delay}h (= ¾ × LL delay)  ·  "
+        f"LL = {ll_value:g} @ {ll_delay}h  ·  "
+        f"k = {k:g}"
+    )
+
+    return {
+        "kind": "hyperbolic_ss_ll",
+        "traces": traces,
+        "layout": {
+            "title": {
+                "text": (
+                    f"Rewards approaching | Time elapsed = {elapsed}h  |  "
+                    f"SS rem = {rem_ss}h  ·  LL rem = {rem_ll}h  |  "
+                    f"{pref_html}"
+                ),
+                "font": {"size": 15, "color": "#1a1d23"},
+            },
+            "xaxis": {
+                "title": "Hours to reward",
+                "range": [-0.2, x_hi],
+                "autorange": False,
+                "fixedrange": True,
+            },
+            "yaxis": {
+                "title": "Perceived value",
+                "range": [0, y_hi],
+                "autorange": False,
+                "fixedrange": True,
+            },
+            "shapes": shapes,
+            "annotations": [
+                {
+                    "text": param_note,
+                    "xref": "paper",
+                    "yref": "paper",
+                    "x": 0.0,
+                    "y": 1.12,
+                    "xanchor": "left",
+                    "yanchor": "bottom",
+                    "showarrow": False,
+                    "font": {"size": 12, "color": "#4a5568"},
+                }
+            ],
+            "legend": {"orientation": "h", "y": -0.15},
+            "margin": {"l": 60, "r": 20, "t": 70, "b": 70},
+            "height": 620,
+            "uirevision": (
+                f"hyp_ss_ll|{ss_value}|{ss_delay}|{ll_value}|{ll_delay}|{k}"
+            ),
+        },
+        "meta": {
+            "ss_value": ss_value,
+            "ss_delay": ss_delay,
+            "ll_value": ll_value,
+            "ll_delay": ll_delay,
+            "discount_factor": k,
+            "elapsed": elapsed,
+            "remaining_ss": rem_ss,
+            "remaining_ll": rem_ll,
+            "ss_available": ss_available,
+            "ll_available": ll_available,
+            "v_ss": v_ss,
+            "v_ll": v_ll,
+            "preference": preference,
+            "finished": elapsed >= max_delay,
+            "ss_delay_rule": "0.75 * ll_delay (rounded)",
         },
     }
 
