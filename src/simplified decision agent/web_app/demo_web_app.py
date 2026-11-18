@@ -1084,10 +1084,7 @@ function syncStepHint() {
   if (demo === "hyperbolic_curve") {
     stepHint.textContent =
       "hyperbolic_curve — Step moves the reward one hour closer to day 0 (axes stay fixed)";
-  } else if (demo === "hyperbolic_ss_ll") {
-    stepHint.textContent =
-      "hyperbolic_ss_ll — Shared SS/LL values + LL delay (SS delay = ¾ LL); Step / Step back; preferred option highlighted";
-  } else if (demo === "sticky_step") {
+    } else if (demo === "sticky_step") {
     stepHint.textContent =
       "sticky_step — Step rolls stick/switch, updates Beta belief; Learn On uses ŝ in foresight";
   } else {
@@ -1387,7 +1384,7 @@ function fillMeta(el, payload) {
       `elapsed = ${m.elapsed}h · SS rem = ${m.remaining_ss}h · LL rem = ${m.remaining_ll}h · ` +
       `<span class="choice">${pref}</span>` +
       ` · V_SS = ${vss} · V_LL = ${vll}` +
-      ` · SS=${m.ss_value}@${m.ss_delay}h (=¾ LL) LL=${m.ll_value}@${m.ll_delay}h k=${m.discount_factor}` +
+      ` k=${m.discount_factor}` +
       doneBit;
   } else if (m.perceived != null) {
     el.textContent = `perceived at t=0 = ${m.perceived.toFixed(4)}`;

@@ -1221,7 +1221,7 @@ def hyperbolic_frame(reward, initial_delay, discount_factor, *, elapsed=0):
                 "font": {"size": 15, "color": "#1a1d23"},
             },
             "xaxis": {
-                "title": "Hours to reward",
+                "title": "Hours from approaching reward",
                 "range": [-0.2, x_hi],
                 "autorange": False,
                 "fixedrange": True,
@@ -1488,11 +1488,6 @@ def hyperbolic_ss_ll_frame(
     else:
         pref_html = f"<b>prefers {preference}</b>"
 
-    param_note = (
-        f"SS = {ss_value:g} @ {ss_delay}h (= ¾ × LL delay)  ·  "
-        f"LL = {ll_value:g} @ {ll_delay}h  ·  "
-        f"k = {k:g}"
-    )
 
     return {
         "kind": "hyperbolic_ss_ll",
@@ -1507,7 +1502,7 @@ def hyperbolic_ss_ll_frame(
                 "font": {"size": 15, "color": "#1a1d23"},
             },
             "xaxis": {
-                "title": "Hours to reward",
+                "title": "Hours from approaching reward",
                 "range": [-0.2, x_hi],
                 "autorange": False,
                 "fixedrange": True,
@@ -1519,19 +1514,6 @@ def hyperbolic_ss_ll_frame(
                 "fixedrange": True,
             },
             "shapes": shapes,
-            "annotations": [
-                {
-                    "text": param_note,
-                    "xref": "paper",
-                    "yref": "paper",
-                    "x": 0.0,
-                    "y": 1.12,
-                    "xanchor": "left",
-                    "yanchor": "bottom",
-                    "showarrow": False,
-                    "font": {"size": 12, "color": "#4a5568"},
-                }
-            ],
             "legend": {"orientation": "h", "y": -0.15},
             "margin": {"l": 60, "r": 20, "t": 70, "b": 70},
             "height": 620,
