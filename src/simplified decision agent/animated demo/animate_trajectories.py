@@ -4,6 +4,8 @@ Animate a full weighted sweep of snack-first sticky trajectories.
 Bars start empty. Every snack-first path (2^(H-1)) is flashed once; fills
 accumulate path probability mass and converge exactly to stick_p_t.
 
+Line graph hops snack ↔ resist for the currentlyflashed path
+
 Refuses to run when horizon > 14 (too many paths to animate).
 
 Run from the package root:
@@ -15,6 +17,7 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
+from tkinter import NONE
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -43,14 +46,15 @@ perceived_s = sticky_params["perceived_s"]
 # Matplotlib can drop frames when INTERVAL_MS is tiny; update() catch-up
 # commits any skipped batches so the final margins stay exact.
 # Raise PATHS_PER_FRAME to go faster (more paths per redraw).
-INTERVAL_MS = 2          # frame rate of animation
+INTERVAL_MS = 10          # frame rate of animation
 PATHS_PER_FRAME = sticky_params["horizon"] / 2  # paths per frame; flash only the last
-RNG_SEED = 0              # shuffle enumeration order only
+RNG_SEED = 1              # shuffle enumeration order only
 MAX_HORIZON = 14          # stop above this (2^(H-1) paths)
 # ------------------------------------------------------------------------
 
 COLORS = {
     "snack": "#c44e52",
+    "resist": "#4c72b0",
     "track": "#e8e8e8",
     "target": "#888888",
     "highlight": "#111111",
@@ -77,7 +81,6 @@ def path_probability(path, s: float) -> float:
 
 def enumerate_snack_first_paths(horizon: int, s: float):
     """All snack-first trajectories and their sticky probabilities.
-
     Day 0 is snack; days 1..H-1 free → 2^(H-1) paths. Bits of the index
     choose snack (0) / resist (1) at each later day.
     """
@@ -179,8 +182,7 @@ class TrajectoryPanel:
         self.ax.set_xticklabels(["snack", "resist"])
         self.ax.set_xlabel("action")
         self.ax.set_title(
-            "snack-first full sweep  |  weighted mass → "
-            r"$p_t=\frac{1}{2}(1+(2s-1)^t)$"
+            "Effective stickiness (Snack first)"
         )
         self.ax.grid(False)
         for spine in ("top", "right"):
@@ -399,6 +401,86 @@ class TrajectoryPanel:
             )
 
 
+class TrajectoryHopGraph:
+
+    Y_SNACK = 1.0
+    Y_RESIST = 0.0
+
+    def __init__(self, axes, horizon: int):
+        self.ax = axes
+        self.horizon = horizon
+        self._setup_axes()
+        (self.line,) = self.ax.plot(
+            [],
+            [],
+            color=COLORS["highlight"],
+            linewidth=2.0,
+            drawstyle="steps-mid",
+            zorder=3,
+        )
+        self.dots = self.ax.scatter(
+            [],
+            [],
+            s=42,
+            edgecolors=COLORS["highlight"],
+            linewidths=1.0,
+            zorder=4,
+        )
+        self.artists = [self.line, self.dots]
+
+    def _setup_axes(self):
+        n = self.horizon
+        self.ax.set_xlim(-0.5, max(n - 0.5, 0.5))
+        self.ax.set_ylim(-0.45, 1.45)
+        self.ax.set_yticks([self.Y_RESIST, self.Y_SNACK])
+        self.ax.set_yticklabels(["resist", "snack"])
+        self.ax.set_xticks(list(range(n)))
+        self.ax.set_xticklabels([f"day {t}" for t in range(n)])
+        self.ax.set_xlabel("day")
+        self.ax.set_title("Current trajectory")
+        self.ax.axhspan(
+            0.5,
+            1.45,
+            facecolor=COLORS["snack"],
+            alpha=0.06,
+            zorder=0,
+        )
+        self.ax.axhspan(
+            -0.45,
+            0.5,
+            facecolor=COLORS["resist"],
+            alpha=0.06,
+            zorder=0,
+        )
+        self.ax.axhline(0.5, color="#cccccc", linewidth=0.8, zorder=1)
+        self.ax.grid(axis="x", color="#eeeeee", linewidth=0.8, zorder=1)
+        for spine in ("top", "right"):
+            self.ax.spines[spine].set_visible(False)
+
+    def show_path(self, path):
+        xs = np.arange(len(path), dtype=float)
+        ys = np.array(
+            [
+                self.Y_SNACK if action == "snack" else self.Y_RESIST
+                for action in path
+            ],
+            dtype=float,
+        )
+        colors = [
+            COLORS["snack"] if action == "snack" else COLORS["resist"]
+            for action in path
+        ]
+        self.line.set_data(xs, ys)
+        self.dots.set_offsets(np.column_stack([xs, ys]))
+        self.dots.set_facecolors(colors)
+
+    def clear(self):
+        """Remove the flashed path and hide the whole hop panel."""
+        self.line.set_data([], [])
+        self.dots.set_offsets(np.empty((0, 2)))
+        self.dots.set_facecolors([])
+
+
 def build_batches(n_paths: int, paths_per_frame: int):
     """(start, end) index batches; each frame commits paths[start:end)."""
     step = max(int(paths_per_frame), 1)
@@ -416,7 +498,7 @@ def main():
 
     n_all = 2**horizon
     n_snack_first = 2 ** max(horizon - 1, 0)
-    print(f"Horizon H = {horizon}  stickiness s = {s}")
+    print(f"Horizon H = {horizon}  Perceived stickiness s = {s}")
     print(f"True trajectories (any a0):     2^{horizon} = {n_all}")
     print(
         f"True trajectories (snack-first): 2^{max(horizon - 1, 0)} = {n_snack_first}  "
@@ -448,14 +530,18 @@ def main():
     probs = probs[order]
     n_paths = len(paths)
 
-    fig, ax = plt.subplots(
-        figsize=(6.2, max(4.5, 0.45 * horizon + 2.2)),
+    fig, (ax_beaker, ax_hop) = plt.subplots(
+        1,
+        2,
+        figsize=(11.2, max(4.5, 0.45 * horizon + 2.2)),
+        gridspec_kw={"width_ratios": [1.35, 1.0]},
         constrained_layout=True,
     )
-    panel = TrajectoryPanel(ax, s, horizon, paths, probs)
+    panel = TrajectoryPanel(ax_beaker, s, horizon, paths, probs)
+    hop = TrajectoryHopGraph(ax_hop, horizon)
 
     fig.suptitle(
-        f"Sticky full sweep  |  s={s}  |  horizon={horizon}",
+        f"Perceived stickiness = {s}  |  Agent horizon = {horizon-1} decisions",
         fontsize=12,
     )
     progress = fig.text(
@@ -472,6 +558,17 @@ def main():
     # Catch-up cursor: if the GUI drops a frame, still commit every path once.
     committed = {"n": 0}
 
+    def _artists():
+        return [
+            *panel.snack_fills,
+            *panel.resist_fills,
+            *panel.snack_labels,
+            *panel.resist_labels,
+            *panel.highlights,
+            *hop.artists,
+            progress,
+        ]
+
     def update_dispatch(frame):
         if frame is None:
             # Finish any remainder, then clear highlights.
@@ -479,6 +576,7 @@ def main():
                 panel.commit_batch(committed["n"], n_paths)
                 committed["n"] = n_paths
             panel.clear_highlights()
+            hop.clear()
             panel._refresh_fills()
             progress.set_text(f"{committed['n']} / {n_paths}")
             snack, _ = panel.empirical_margins()
@@ -489,29 +587,17 @@ def main():
                     f"  day {t}: emp={snack[t]:.6f}  theory={th:.6f}  "
                     f"err={abs(snack[t] - th):.2e}"
                 )
-            return [
-                *panel.snack_fills,
-                *panel.resist_fills,
-                *panel.snack_labels,
-                *panel.resist_labels,
-                *panel.highlights,
-                progress,
-            ]
+            return _artists()
 
         _start, end = frame
         # Commit from last position through this batch end (covers skipped frames).
         if end > committed["n"]:
             panel.commit_batch(committed["n"], end)
             committed["n"] = end
+        if panel.current_path is not None:
+            hop.show_path(panel.current_path)
         progress.set_text(f"{committed['n']} / {n_paths}")
-        return [
-            *panel.snack_fills,
-            *panel.resist_fills,
-            *panel.snack_labels,
-            *panel.resist_labels,
-            *panel.highlights,
-            progress,
-        ]
+        return _artists()
 
     anim = FuncAnimation(
         fig,
