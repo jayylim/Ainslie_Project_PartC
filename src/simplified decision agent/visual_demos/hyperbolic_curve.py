@@ -33,7 +33,7 @@ for current_delay in range(LL["delay"] + 1):
     axes.clear()
     axes.set_xlim(-0.2, x_max)
     axes.set_ylim(0, y_max)
-    axes.set_xlabel("Time to reward (days)")
+    axes.set_xlabel("Time from now (days)")
     axes.set_ylabel("Perceived value")
     axes.set_title(f"Choice at time step = {current_delay}")
 

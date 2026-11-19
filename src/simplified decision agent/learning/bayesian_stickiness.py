@@ -5,8 +5,8 @@ Prior:    s ~ Beta(alpha0, beta0)
 Observe:  stuck ∈ {0, 1}  (1 = stick, 0 = switch)
 Posterior: Beta(alpha0 + #sticks, beta0 + #switches)
 
-Perceived stickiness for foresight is typically the posterior mean
-alpha / (alpha + beta). True environmental stickiness is never stored here.
+Perceived stickiness for foresight (and stick/switch rolls) is the prior
+mean α₀/(α₀+β₀) when not learning, else the posterior mean α/(α+β).
 """
 
 from __future__ import annotations
@@ -36,6 +36,10 @@ class BayesianStickinessBelief:
             self.alpha += 1.0
         else:
             self.beta += 1.0
+
+    def prior_mean(self):
+        """Fixed prior stickiness α₀ / (α₀ + β₀) before any stick/switch obs."""
+        return self.alpha0 / (self.alpha0 + self.beta0)
 
     def mean(self):
         # computes the posterior mean E[s | data] = alpha / (alpha + beta)

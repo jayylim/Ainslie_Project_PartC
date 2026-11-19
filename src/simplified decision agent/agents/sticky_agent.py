@@ -10,12 +10,10 @@ stickiness s = P(a_{t+1} = a_t) instead of assuming pure commitment:
 When s = 1, long-vision values match HypAgent (pure commitment).
 Acts only through the environment interface (simulate / get_actions).
 
-Optional Bayesian learning:
-  The environment owns the beta_belief and ŝ = beta_belief.mean().
-  learn_stickiness only gates whether foresight tracks environment.s_hat();
-  when True, perceived_s is updated to ŝ whenever perceived_stickiness is read (after the first step)
-  when False, planning keeps the fixed perceived_s parameter.
-  Never writes an environment's true_stickiness.
+Foresight / roll stickiness:
+  learn_stickiness Off → fixed preset perceived_s
+    (for StickyTimeline, set this to the Beta prior mean α₀/(α₀+β₀))
+  learn_stickiness On  → current Beta posterior mean (requires env.beta_belief)
 """
 
 
@@ -31,24 +29,22 @@ class StickyHypAgent:
         self.discount_factor = discount_factor
         self.vision = vision  # "short" or "long"
         self.horizon = horizon  # max # of decisions to plan; None => all remaining if finite
-        self.perceived_s = perceived_s  # perceived s used in stick_p_t (updated from ŝ when learning)
+        self.perceived_s = float(perceived_s)  # fixed preset when not learning
         self.learn_stickiness = bool(learn_stickiness)
 
     def perceived_stickiness(self, environment):
-        """Foresight s for stick_p_t.
+        """Foresight s for stick_p_t (decision probabilities).
 
-        learn_stickiness Off → always the fixed perceived_s parameter.
-        learn_stickiness On  → perceived_s until beta_belief has ≥1 obs, then ŝ.
+        learn Off → preset perceived_s.
+        learn On  → Beta posterior mean α/(α+β); requires environment.beta_belief.
         """
         if not self.learn_stickiness:
             return self.perceived_s
 
-        beta_belief = getattr(environment, "beta_belief", None)
-        if beta_belief is None or beta_belief.n_obs() == 0:
-            return self.perceived_s
-
-        s_hat = environment.s_hat()
-        return self.perceived_s if s_hat is None else s_hat
+        beta_belief = getattr(environment, "beta_belief", None) if environment else None
+        if beta_belief is None:
+            raise ValueError("learn_stickiness requires environment.beta_belief")
+        return beta_belief.mean()
 
     def value_function(self, reward, distance):
         return reward / (1 + self.discount_factor * distance)  # hyperbolic discounting formula

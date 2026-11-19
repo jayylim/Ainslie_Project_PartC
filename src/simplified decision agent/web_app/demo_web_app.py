@@ -50,7 +50,7 @@ DEFAULT_DELAY_STEP = 4
 DEFAULT_STICKINESS = sticky_params["perceived_s"]
 DEFAULT_LEARN_STICKINESS = sticky_params["learn_stickiness"]
 DEFAULT_TRUE_STICKINESS = env_params["true_stickiness"]
-STICKY_STEP_SEED = 0
+STICKY_STEP_SEED = None # integer makes it reproducible
 STICKY_PRIOR_ALPHA = 1.0
 STICKY_PRIOR_BETA = 1.0
 
