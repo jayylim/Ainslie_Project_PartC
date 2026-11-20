@@ -7,8 +7,8 @@ those values are summed (agents.hyperbolic.HypAgent.aggregate_value).
 
   - resist (LL): one curve where at each time t the height is the sum of
     V(reward_i, delay_i - t) over LLs still outstanding
-  - snack (SS): one dot at t=0 with height = day-1 snack aggregate
-    (same as action_values["snack"])
+  - dessert (SS): one dot at t=0 with height = day-1 dessert aggregate
+    (same as action_values["dessert"])
 
 No stepping through the environment.
 
@@ -36,7 +36,7 @@ from environments.timeline import TimelineEnvironment
 from agents.agent_configs import agent_params
 from main import env_params
 
-COLORS = {"snack": "#c44e52", "resist": "#4c72b0"}
+COLORS = {"dessert": "#c44e52", "resist": "#4c72b0"}
 
 
 def horizon_events(agent, environment, state, action):
@@ -62,12 +62,12 @@ state = environment.reset()
 
 action, action_values = agent.choose_action(state, environment)
 
-ss_events = horizon_events(agent, environment, state, "snack")
+ss_events = horizon_events(agent, environment, state, "dessert")
 ll_events = horizon_events(agent, environment, state, "resist")
 
 ll_delay = environment.rewards["LL"]["delay"]
 # Sail height at t = discount-each-then-sum of LLs still left (agent rule)
-ss_value = bundle_value_at(agent, ss_events, 0)  # == action_values["snack"] when long
+ss_value = bundle_value_at(agent, ss_events, 0)  # == action_values["dessert"] when long
 
 fig, axes = plt.subplots()
 
@@ -89,8 +89,8 @@ axes.text(ll_delay, ll_tip, f"  {ll_tip:.2f}", color=COLORS["resist"],
           va="bottom", ha="left", size=12)
 
 # SS: single dot at the day-1 aggregate (discount each SS, then sum)
-axes.scatter(0, ss_value, s=50, color=COLORS["snack"], zorder=5, label="snack")
-axes.text(-1, ss_value-2, f"{ss_value:.2f}", color=COLORS["snack"],
+axes.scatter(0, ss_value, s=50, color=COLORS["dessert"], zorder=5, label="dessert")
+axes.text(-1, ss_value-2, f"{ss_value:.2f}", color=COLORS["dessert"],
 
           va="bottom", ha="right", size=12)
 
@@ -102,9 +102,9 @@ axes.set_ylabel("Perceived value")
 axes.set_title(f"Bundled value on day 1 |  Agent would choose {action}")
 axes.legend(loc="upper left")
 
-print(f"Perceived values on day 1: snack={action_values['snack']:.4f}  "
+print(f"Perceived values on day 1: dessert={action_values['dessert']:.4f}  "
       f"resist={action_values['resist']:.4f}")
-print(f"Sail endpoints:            snack={ss_value:.4f}  "
+print(f"Sail endpoints:            dessert={ss_value:.4f}  "
       f"resist@0={perceived_ll:.4f}  resist@first LL={ll_tip:.4f}")
 print(f"Would choose {action}")
 

@@ -18,7 +18,7 @@ Side-by-side of `visual_demos/` (+ `animated demo/`) and `web_app/`.
 | ---------------------------------------------- | ----------------------------------------------- | --------------------------------- | ------------------------------------------------------- |
 | Stepped day-by-day sails (HypAgent + env.step) | `visualizing_main.py`                           | Steppable → `visualizing_main`    | Keep web-app version                                    |
 | Static choice sails + Σ stack                  | `visualise_sails.py`                            | Non-steppable → `visualise_sails` | Same (minor visual quirks)                              |
-| Bundled resist sail + snack aggregate          | `aggregate_sail.py`                             | Non-steppable → `aggregate_sail`  | Same (minor visual quirks)                              |
+| Bundled resist sail + dessert aggregate          | `aggregate_sail.py`                             | Non-steppable → `aggregate_sail`  | Same (minor visual quirks)                              |
 | Reward approaching t=0 (fixed agent)           | `hyperbolic_curve.py`                           | Steppable → `hyperbolic_curve`    | Same mechanism; **to be aligned** (params source)       |
 | Max SS resisted vs stickiness                  | `sticky_graph.py`                               | Sticky → top chart                | Same maths; minor design differences for visual clarity |
 | Sticky sails (sticky EV aggregates)            | `visualise_sticky_sails.py`                     | Sticky → bottom chart             | Same maths; Still figuring out the better visual        |
@@ -38,7 +38,7 @@ Side-by-side of `visual_demos/` (+ `animated demo/`) and `web_app/`.
 | Layout | **Single** sails axes (no Σ stack) | **Dual** panel via `sails_frame` (Σ stack + sails) — same layout as static `visualise_sails` |
 | Advance | Click / keypress | Step button |
 | Cap | `main.max_steps` | Same (`max_steps` in shared config) |
-| Console | Prints per-day values + LL−SS gaps | Meta line only (choice + snack/resist) |
+| Console | Prints per-day values + LL−SS gaps | Meta line only (choice + dessert/resist) |
 
 **Keep web-app version:** dual-panel stepped sails is the reference; project script is still single-panel.
 
@@ -49,7 +49,7 @@ Side-by-side of `visual_demos/` (+ `animated demo/`) and `web_app/`.
 | | Project | Web |
 | --- | --- | --- |
 | Mechanism | Same: HypAgent foresight sails; left Σ = sum of per-day V_hyp | Same (`sails_frame`) |
-| Visual quirks | Matplotlib Reds/Blues colormaps for stack segments | Horizon `fade()` toward white on snack/resist hexes |
+| Visual quirks | Matplotlib Reds/Blues colormaps for stack segments | Horizon `fade()` toward white on dessert/resist hexes |
 | Labels / choice | Title + bold aggregate numeral | Title HTML bold + meta line |
 
 **Same** overall. Stack colour ramp is a minor visual difference only.
@@ -60,7 +60,7 @@ Side-by-side of `visual_demos/` (+ `animated demo/`) and `web_app/`.
 
 | | Project | Web |
 | --- | --- | --- |
-| Mechanism | Same: resist height = sum of still-outstanding LL discounts; snack = one t=0 aggregate | Same (`aggregate_frame`) |
+| Mechanism | Same: resist height = sum of still-outstanding LL discounts; dessert = one t=0 aggregate | Same (`aggregate_frame`) |
 | Choice emphasis | Standard line/markers | Thicker chosen sail / larger markers / ★ legend / bold numerals |
 
 **Same** mechanism. Chosen-action emphasis is stronger on web (cosmetic).
@@ -114,8 +114,8 @@ Side-by-side of `visual_demos/` (+ `animated demo/`) and `web_app/`.
 
 | Script | What it shows (current behaviour) |
 | --- | --- |
-| `sticky_foresight_panels.py` | Visit-probability beaker tracks for snack-first vs resist-first |
-| `animated demo/animate_trajectories.py` | Animated accumulation of snack-first path mass → `stick_p_t` |
+| `sticky_foresight_panels.py` | Visit-probability beaker tracks for dessert-first vs resist-first |
+| `animated demo/animate_trajectories.py` | Animated accumulation of dessert-first path mass → `stick_p_t` |
 
 **To be aligned:** foresight beaker panels and trajectory animation.
 

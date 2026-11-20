@@ -11,7 +11,7 @@ At day 1 the agent plans {horizon} steps ahead. For each future SS / LL:
      the current SS (delay 0) is tip-only
 
 Black dotted lines mark decision nodes (when that LL's SS is offered).
-Opaque scatters at t=0 show the bundled snack / resist aggregates
+Opaque scatters at t=0 show the bundled dessert / resist aggregates
 (same as HypAgent.evaluate_action / aggregate_value). Later foresight sails
 fade toward white; data labels stay fully opaque.
 
@@ -43,10 +43,10 @@ from agents.agent_configs import agent_params
 from main import env_params
 
 COLORS = {
-    "snack": "#c44e52",
+    "dessert": "#c44e52",
     "resist": "#4c72b0",
     # Sail bases; later foresight days fade toward white (labels stay opaque)
-    "snack_sail": "#c44e52",
+    "dessert_sail": "#c44e52",
     "resist_sail": "#4c72b0",
 }
 
@@ -61,7 +61,7 @@ def fade(base, i, n, max_fade=0.72):
 def foreseeable_events(agent, environment, state):
     # 1 or horizon as generated in agent
     return (
-        agent.choice_horizon(state, "snack", environment),
+        agent.choice_horizon(state, "dessert", environment),
         agent.choice_horizon(state, "resist", environment),
     )
 
@@ -125,7 +125,7 @@ def plot_ss_sails(axes, agent, ss_events, base_color, *, label_cutoff=None):
         label_cutoff = n
     for i, (delay, reward) in enumerate(ss_events):
         color = fade(base_color, i, n)
-        label = "snack" if i == 0 else None
+        label = "dessert" if i == 0 else None
         show_labels = i < label_cutoff
         if delay == 0:
             tip = agent.value_function(reward, 0)
@@ -166,29 +166,29 @@ def plot_ss_sails(axes, agent, ss_events, base_color, *, label_cutoff=None):
 
 
 def plot_aggregates(axes, action_values, chosen):
-    """Bundled snack / resist values at the current decision (t=0)."""
-    snack_agg = action_values["snack"]
+    """Bundled dessert / resist values at the current decision (t=0)."""
+    dessert_agg = action_values["dessert"]
     resist_agg = action_values["resist"]
 
     axes.scatter(
         0,
-        snack_agg,
+        dessert_agg,
         s=70,
-        color=COLORS["snack"],
+        color=COLORS["dessert"],
         zorder=7,
-        edgecolors=COLORS["snack"],
+        edgecolors=COLORS["dessert"],
         linewidths=1.2,
-        label="snack aggregate",
+        label="dessert aggregate",
     )
     axes.text(
         -2,
-        snack_agg + 1,
-        f"{snack_agg:.2f}",
-        color=COLORS["snack"],
+        dessert_agg + 1,
+        f"{dessert_agg:.2f}",
+        color=COLORS["dessert"],
         va="bottom",
         ha="right",
         size=11,
-        fontweight="bold" if chosen == "snack" else "normal",
+        fontweight="bold" if chosen == "dessert" else "normal",
     )
 
     axes.scatter(
@@ -212,7 +212,7 @@ def plot_aggregates(axes, action_values, chosen):
         fontweight="bold" if chosen == "resist" else "normal",
     )
 
-    return max(snack_agg, resist_agg)
+    return max(dessert_agg, resist_agg)
 
 #plotting some cumulative bar graph
 
@@ -226,43 +226,43 @@ def plot_aggregate_stack(axes, agent, ss_events, ll_events, action_values, chose
         return
 
     # One contribution per foresight day (delay, reward) → V from now
-    snack_parts = [
+    dessert_parts = [
         (delay, agent.value_function(reward, delay)) for delay, reward in ss_events
     ]
     resist_parts = [
         (delay, agent.value_function(reward, delay)) for delay, reward in ll_events
     ]
-    snack_agg = action_values["snack"]
+    dessert_agg = action_values["dessert"]
     resist_agg = action_values["resist"]
 
-    snack_cmap = plt.cm.Reds
+    dessert_cmap = plt.cm.Reds
     resist_cmap = plt.cm.Blues
 
     def fade_cmap(cmap, i, n_seg):
         t = i / (n_seg - 1) if n_seg > 1 else 0.0
         return cmap(0.88 - 0.56 * t)
 
-    x_snack, x_resist = 0.0, 1.0
+    x_dessert, x_resist = 0.0, 1.0
     bar_w = 0.55
     bottom_s = 0.0
     bottom_r = 0.0
     min_label = 0.05 * max(reward for _, reward in ss_events)
     # (hours, height, segment mid-y) for side callouts
-    snack_callouts = []
+    dessert_callouts = []
     resist_callouts = []
 
     for i in range(n):
-        hours_s, h_s = snack_parts[i]
+        hours_s, h_s = dessert_parts[i]
         hours_r, h_r = resist_parts[i]
-        edge_s = 1.2 if chosen == "snack" else 0.5
+        edge_s = 1.2 if chosen == "dessert" else 0.5
         edge_r = 1.2 if chosen == "resist" else 0.5
 
         axes.bar(
-            x_snack,
+            x_dessert,
             h_s,
             width=bar_w,
             bottom=bottom_s,
-            color=fade_cmap(snack_cmap, i, n),
+            color=fade_cmap(dessert_cmap, i, n),
             edgecolor="black",
             linewidth=edge_s,
         )
@@ -276,13 +276,13 @@ def plot_aggregate_stack(axes, agent, ss_events, ll_events, action_values, chose
             linewidth=edge_r,
         )
         if h_s >= min_label:
-            snack_callouts.append((hours_s, h_s, bottom_s + h_s / 2))
+            dessert_callouts.append((hours_s, h_s, bottom_s + h_s / 2))
         if h_r >= min_label:
             resist_callouts.append((hours_r, h_r, bottom_r + h_r / 2))
         bottom_s += h_s
         bottom_r += h_r
 
-    y_peak = max(snack_agg, resist_agg) or 1.0
+    y_peak = max(dessert_agg, resist_agg) or 1.0
 
     def spaced_ys(count, lo, hi):
         if count <= 0:
@@ -304,7 +304,7 @@ def plot_aggregate_stack(axes, agent, ss_events, ll_events, action_values, chose
                 ha=ha,
                 va="center",
                 fontsize=7,
-                color="#4c72b0" if ha == "left" else "#c44e52", # right and left are substitute for resist and snack respectively
+                color="#4c72b0" if ha == "left" else "#c44e52", # right and left are substitute for resist and dessert respectively
                 arrowprops={
                     "arrowstyle": "->",
                     "color": "#666666",
@@ -315,19 +315,19 @@ def plot_aggregate_stack(axes, agent, ss_events, ll_events, action_values, chose
                 zorder=8,
             )
 
-    draw_callouts(snack_callouts, x_snack, x_snack - 0.85, "right")
+    draw_callouts(dessert_callouts, x_dessert, x_dessert - 0.85, "right")
     draw_callouts(resist_callouts, x_resist, x_resist + 0.85, "left")
 
 
     axes.text(
-        x_snack - 0.75,
+        x_dessert - 0.75,
         y_peak * 1.04,
-        f"Σ snack = {snack_agg:.2f}",
+        f"Σ dessert = {dessert_agg:.2f}",
         ha="left",
         va="bottom",
         fontsize=9,
         fontweight="bold",
-        color=COLORS["snack"],
+        color=COLORS["dessert"],
     )
 
     axes.text(
@@ -341,8 +341,8 @@ def plot_aggregate_stack(axes, agent, ss_events, ll_events, action_values, chose
         color=COLORS["resist"],
     )
 
-    axes.set_xticks([x_snack, x_resist])
-    axes.set_xticklabels(["snack", "resist"])
+    axes.set_xticks([x_dessert, x_resist])
+    axes.set_xticklabels(["dessert", "resist"])
     axes.set_xlim(-1.25, 2.25)
     axes.set_ylim(0, y_peak * 1.18)
     axes.set_ylabel("Contribution from now")
@@ -401,7 +401,7 @@ def main():
     y_max = max(
         y_max,
         plot_ss_sails(
-            axes, agent, ss_events, COLORS["snack_sail"], label_cutoff=label_cutoff
+            axes, agent, ss_events, COLORS["dessert_sail"], label_cutoff=label_cutoff
         ),
     )
     y_max = max(y_max, plot_aggregates(axes, action_values, action))
@@ -436,7 +436,7 @@ def main():
         v = agent.value_function(reward, delay)
         print(f"Day {-(-delay//24)} | {delay}h  Value = {v:.4f}")
     print(
-        f"Current choice values: snack={action_values['snack']:.4f}  "
+        f"Current choice values: dessert={action_values['dessert']:.4f}  "
         f"resist={action_values['resist']:.4f}"
     )
     print(f"Would choose {action}")

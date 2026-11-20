@@ -26,7 +26,7 @@ Run from the package root:
 Legend
 ------
 s                  stickiness; P(next decision equals current decision)
-a                  candidate action being valued today (snack or resist)
+a                  candidate action being valued today (dessert or resist)
 b                  the other action (not a)
 a_t                action on foresight day t (random under stickiness)
 t                  foresight day index, t = 0 .. horizon-1 (0 = today)
@@ -54,7 +54,7 @@ from main import env_params
 # Edit defaults in agents/agent_configs.py (sticky_params).
 s = sticky_params["perceived_s"]
 
-OTHER = {"snack": "resist", "resist": "snack"}  # b given a
+OTHER = {"dessert": "resist", "resist": "dessert"}  # b given a
 
 
 def stick_p_t(s, t):
@@ -77,7 +77,7 @@ def hyp_value(agent, environment, state, action, t):
 def value_table(agent, environment, state, s):
     """
     Shared foresight table (independent of today's candidate):
-    stick_p_t and V_hyp(snack), V_hyp(resist) at each t.
+    stick_p_t and V_hyp(dessert), V_hyp(resist) at each t.
     """
     horizon = agent.get_horizon(state, environment)
     rows = []
@@ -86,7 +86,7 @@ def value_table(agent, environment, state, s):
             {
                 "t": t,
                 "stick_p_t": stick_p_t(s, t),
-                "v_snack": hyp_value(agent, environment, state, "snack", t),
+                "v_dessert": hyp_value(agent, environment, state, "dessert", t),
                 "v_resist": hyp_value(agent, environment, state, "resist", t),
             }
         )
@@ -100,7 +100,7 @@ def V_from_table(table, a):
     EV_t = stick_p_t * V_hyp(a) + (1 - stick_p_t) * V_hyp(b)
     """
     b = OTHER[a]
-    v_key = {"snack": "v_snack", "resist": "v_resist"}
+    v_key = {"dessert": "v_dessert", "resist": "v_resist"}
     total = 0.0
     breakdown = []
     for row in table:
@@ -141,32 +141,32 @@ def main():
         " V_hyp(choice) = value_choice / (1 + discount_factor * delay)\n"
         " stick_p_t = P(a_t = a | a_0 = a) = 1/2 *(1 + (2s - 1)^t)"
     )
-    print(f"{'Day t':>3}  {'stick_p_t':>10}  {'V_hyp(snack)':>14}  {'V_hyp(resist)':>14}")
+    print(f"{'Day t':>3}  {'stick_p_t':>10}  {'V_hyp(dessert)':>14}  {'V_hyp(resist)':>14}")
     for row in table:
         print(
-            f"{row['t']:3d}  {row['stick_p_t']:10.4f}  {row['v_snack']:14.4f}  "
+            f"{row['t']:3d}  {row['stick_p_t']:10.4f}  {row['v_dessert']:14.4f}  "
             f"{row['v_resist']:14.4f}"
         )
     print()
 
     # --- 2. Expected day value under stickiness (both branches side by side) ---
-    V_snack, snack_rows = V_from_table(table, "snack")
+    V_dessert, dessert_rows = V_from_table(table, "dessert")
     V_resist, resist_rows = V_from_table(table, "resist")
-    V_values = {"snack": V_snack, "resist": V_resist}
+    V_values = {"dessert": V_dessert, "resist": V_resist}
 
     print(
         "Table 2 — Expected day value by branch\n"
         "  EV_t | choice first = stick_p_t * V_hyp(a) + (1-stick_p_t) * V_hyp(b)\n"
     )
     col = 22
-    print(f"{'t':>3}  {'a = snack':^{col}}  {'a = resist':^{col}}")
-    print(f"{'':>3}  {'(snack first)':^{col}}  {'(resist first)':^{col}}")
-    for snack_row, resist_row in zip(snack_rows, resist_rows):
+    print(f"{'t':>3}  {'a = dessert':^{col}}  {'a = resist':^{col}}")
+    print(f"{'':>3}  {'(dessert first)':^{col}}  {'(resist first)':^{col}}")
+    for dessert_row, resist_row in zip(dessert_rows, resist_rows):
         print(
-            f"{snack_row['t']:3d}  {snack_row['expected_day_value']:{col}.4f}  "
+            f"{dessert_row['t']:3d}  {dessert_row['expected_day_value']:{col}.4f}  "
             f"{resist_row['expected_day_value']:{col}.4f}"
         )
-    print(f"{'sum':>3}  {V_snack:{col}.6f}  {V_resist:{col}.6f}")
+    print(f"{'sum':>3}  {V_dessert:{col}.6f}  {V_resist:{col}.6f}")
     print()
 
     # --- 3. Sticky choice vs s=1 baseline ---
@@ -180,7 +180,7 @@ def main():
         "assumes today's action is repeated every foresight day."
     )
     print(
-        f"  snack={baseline_values['snack']:.6f}  "
+        f"  dessert={baseline_values['dessert']:.6f}  "
         f"resist={baseline_values['resist']:.6f}"
     )
     print(f"Baseline would choose {baseline_action}")

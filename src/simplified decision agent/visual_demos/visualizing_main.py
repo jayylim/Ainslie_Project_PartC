@@ -30,10 +30,10 @@ from agents.agent_configs import agent_params
 from main import env_params, max_steps
 
 COLORS = {
-    "snack": "#c44e52",
+    "dessert": "#c44e52",
     "resist": "#4c72b0",
     # Sail bases; later foresight days fade toward white (labels stay opaque)
-    "snack_sail": "#c44e52",
+    "dessert_sail": "#c44e52",
     "resist_sail": "#4c72b0",
 }
 
@@ -48,7 +48,7 @@ def fade(base, i, n, max_fade=0.72):
 def foreseeable_events(agent, environment, state):
     # 1 or horizon as generated in agent
     return (
-        agent.choice_horizon(state, "snack", environment),
+        agent.choice_horizon(state, "dessert", environment),
         agent.choice_horizon(state, "resist", environment),
     )
 
@@ -99,7 +99,7 @@ def plot_ss_sails(axes, agent, ss_events, base_color):
     n = len(ss_events)
     for i, (delay, reward) in enumerate(ss_events):
         color = fade(base_color, i, n)
-        label = "snack" if i == 0 else None
+        label = "dessert" if i == 0 else None
         if delay == 0:
             tip = agent.value_function(reward, 0)
             y_max = max(y_max, tip)
@@ -137,29 +137,29 @@ def plot_ss_sails(axes, agent, ss_events, base_color):
 
 
 def plot_aggregates(axes, action_values, chosen):
-    """Bundled snack / resist values at the current decision (t=0)."""
-    snack_agg = action_values["snack"]
+    """Bundled dessert / resist values at the current decision (t=0)."""
+    dessert_agg = action_values["dessert"]
     resist_agg = action_values["resist"]
 
     axes.scatter(
         0,
-        snack_agg,
+        dessert_agg,
         s=70,
-        color=COLORS["snack"],
+        color=COLORS["dessert"],
         zorder=7,
-        edgecolors=COLORS["snack"],
+        edgecolors=COLORS["dessert"],
         linewidths=1.2,
-        label="snack aggregate",
+        label="dessert aggregate",
     )
     axes.text(
         -1,
-        snack_agg,
-        f"{snack_agg:.2f}",
-        color=COLORS["snack"],
+        dessert_agg,
+        f"{dessert_agg:.2f}",
+        color=COLORS["dessert"],
         va="bottom",
         ha="right",
         size=11,
-        fontweight="bold" if chosen == "snack" else "normal",
+        fontweight="bold" if chosen == "dessert" else "normal",
     )
 
     axes.scatter(
@@ -183,7 +183,7 @@ def plot_aggregates(axes, action_values, chosen):
         fontweight="bold" if chosen == "resist" else "normal",
     )
 
-    return max(snack_agg, resist_agg)
+    return max(dessert_agg, resist_agg)
 
 
 def draw_frame(axes, agent, environment, state, steps):
@@ -215,7 +215,7 @@ def draw_frame(axes, agent, environment, state, steps):
         y_max = max(y_max, peak)
 
     # ensure y_max is actually the highest point of the graph
-    y_max = max(y_max, plot_ss_sails(axes, agent, ss_events, COLORS["snack_sail"]))
+    y_max = max(y_max, plot_ss_sails(axes, agent, ss_events, COLORS["dessert_sail"]))
     y_max = max(y_max, plot_aggregates(axes, action_values, action))
 
     # ensure x_max is actually the longest delay; its normally from LL-events anyway
@@ -250,13 +250,13 @@ def draw_frame(axes, agent, environment, state, steps):
         v = agent.value_function(reward, delay)
         print(f"Day {-(-delay//24)} | {delay}h  Value={v:.4f}")
     print(
-        f"Current choice values: snack={action_values['snack']:.4f}  "
+        f"Current choice values: dessert={action_values['dessert']:.4f}  "
         f"resist={action_values['resist']:.4f}"
     )
     print(f"Would choose {action}")
 
     # Sanity: LL − SS aggregate value at the current decision (day 0). Should increase as horizon shortens.
-    ll_ss_gap = action_values["resist"] - action_values["snack"]
+    ll_ss_gap = action_values["resist"] - action_values["dessert"]
     print(f"LL−SS at day 0: {ll_ss_gap:.4f}")
 
     return action, ll_ss_gap

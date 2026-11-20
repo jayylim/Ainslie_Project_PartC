@@ -51,10 +51,10 @@ if SHOW_STICKY_BREAKDOWN:
 # ------------------------------------------------------------------------
 
 COLORS = {
-    "snack": "#c44e52",
+    "dessert": "#c44e52",
     "resist": "#4c72b0",
     # Sail bases (horizon fade lightens these for later foresight days)
-    "snack_sail": "#c44e52",
+    "dessert_sail": "#c44e52",
     "resist_sail": "#4c72b0",
 }
 
@@ -77,7 +77,7 @@ def outcome_events(agent, environment, state):
     ss_events = []
     ll_events = []
     for t in range(horizon):
-        _, ss_outcomes = environment.simulate(state, "snack")
+        _, ss_outcomes = environment.simulate(state, "dessert")
         _, ll_outcomes = environment.simulate(state, "resist")
         for reward, delay in ss_outcomes.values():
             ss_events.append((delay + t * interval, reward))
@@ -129,7 +129,7 @@ def plot_ss_sails(axes, agent, ss_events, base_color):
     n = len(ss_events)
     for i, (delay, reward) in enumerate(ss_events):
         color = fade(base_color, i, n)
-        label = "snack" if i == 0 else None
+        label = "dessert" if i == 0 else None
         if delay == 0:
             tip = agent.value_function(reward, 0)
             y_max = max(y_max, tip)
@@ -167,29 +167,29 @@ def plot_ss_sails(axes, agent, ss_events, base_color):
 
 
 def plot_aggregates(axes, action_values, chosen):
-    """Sticky bundled snack / resist values at the current decision (t=0)."""
-    snack_agg = action_values["snack"]
+    """Sticky bundled dessert / resist values at the current decision (t=0)."""
+    dessert_agg = action_values["dessert"]
     resist_agg = action_values["resist"]
 
     axes.scatter(
         0,
-        snack_agg,
+        dessert_agg,
         s=70,
-        color=COLORS["snack"],
+        color=COLORS["dessert"],
         zorder=7,
-        edgecolors=COLORS["snack"],
+        edgecolors=COLORS["dessert"],
         linewidths=1.2,
-        label="snack aggregate",
+        label="dessert aggregate",
     )
     axes.text(
         -2,
-        snack_agg + 1,
-        f"{snack_agg:.2f}",
-        color=COLORS["snack"],
+        dessert_agg + 1,
+        f"{dessert_agg:.2f}",
+        color=COLORS["dessert"],
         va="bottom",
         ha="right",
         size=11,
-        fontweight="bold" if chosen == "snack" else "normal",
+        fontweight="bold" if chosen == "dessert" else "normal",
     )
 
     axes.scatter(
@@ -213,7 +213,7 @@ def plot_aggregates(axes, action_values, chosen):
         fontweight="bold" if chosen == "resist" else "normal",
     )
 
-    return max(snack_agg, resist_agg)
+    return max(dessert_agg, resist_agg)
 
 
 def main():
@@ -249,7 +249,7 @@ def main():
         )
         y_max = max(y_max, peak)
 
-    y_max = max(y_max, plot_ss_sails(axes, agent, ss_events, COLORS["snack_sail"]))
+    y_max = max(y_max, plot_ss_sails(axes, agent, ss_events, COLORS["dessert_sail"]))
     y_max = max(y_max, plot_aggregates(axes, action_values, action))
 
     x_max = max(
@@ -272,7 +272,7 @@ def main():
     axes.legend(loc="upper right")
 
     interval = environment.decision_interval
-    snack_days = agent.choice_horizon(state, "snack", environment)
+    dessert_days = agent.choice_horizon(state, "dessert", environment)
     resist_days = agent.choice_horizon(state, "resist", environment)
 
     print(f"Horizon = {n}  perceived_s = {perceived_s}")
@@ -281,10 +281,10 @@ def main():
         "Table 1 — Pure hyperbolic day values\n"
         "  V_hyp(choice) from now at each decision node"
     )
-    print(f"{'hours':>6}  {'stick_p':>10}  {'V_hyp(snack)':>14}  {'V_hyp(resist)':>14}")
-    for (t, _), (_, _) in zip(snack_days, resist_days):
+    print(f"{'hours':>6}  {'stick_p':>10}  {'V_hyp(dessert)':>14}  {'V_hyp(resist)':>14}")
+    for (t, _), (_, _) in zip(dessert_days, resist_days):
         hours = t * interval
-        v_s = agent.day_value(state, "snack", environment, t)
+        v_s = agent.day_value(state, "dessert", environment, t)
         v_r = agent.day_value(state, "resist", environment, t)
         print(
             f"{hours:6d}  {agent.stick_p_t(t):10.4f}  {v_s:14.4f}  {v_r:14.4f}"
@@ -294,12 +294,12 @@ def main():
         "Table 2 — Sticky expected day values\n"
         "  EV_t | choice first = stick_p * V_hyp(a) + (1-stick_p) * V_hyp(b)"
     )
-    print(f"{'hours':>6}  {'EV snack-first':>16}  {'EV resist-first':>16}")
-    for (t, ev_s), (_, ev_r) in zip(snack_days, resist_days):
+    print(f"{'hours':>6}  {'EV dessert-first':>16}  {'EV resist-first':>16}")
+    for (t, ev_s), (_, ev_r) in zip(dessert_days, resist_days):
         hours = t * interval
         print(f"{hours:6d}  {ev_s:16.4f}  {ev_r:16.4f}")
     print(
-        f"{'sum':>6}  {action_values['snack']:16.6f}  {action_values['resist']:16.6f}"
+        f"{'sum':>6}  {action_values['dessert']:16.6f}  {action_values['resist']:16.6f}"
     )
     print()
     print(f"Would choose {action}")

@@ -16,10 +16,10 @@ from sticky_decisions import stick_p_t
 # ---------------------------------------------------------------------------
 
 COLORS = {
-    "snack": "#c44e52",
+    "dessert": "#c44e52",
     "resist": "#4c72b0",
     # Sail bases; later foresight days fade toward white (labels stay opaque)
-    "snack_sail": "#c44e52",
+    "dessert_sail": "#c44e52",
     "resist_sail": "#4c72b0",
     # sticky_step Beta belief panel
     "belief": "#2ca02c",
@@ -76,8 +76,8 @@ def max_ss_resisted(agent, s, delay_SS, delay_LL, reward_LL, horizon, decision_i
     """Identical derivation to sticky_graph.max_ss_resisted."""
     V_resist_LL = 0.0
     V_resist_SS = 0.0
-    V_snack_LL = 0.0
-    V_snack_SS = 0.0
+    V_dessert_LL = 0.0
+    V_dessert_SS = 0.0
 
     for t in range(horizon):
         sticking = stick_p_t(s, t)
@@ -86,13 +86,13 @@ def max_ss_resisted(agent, s, delay_SS, delay_LL, reward_LL, horizon, decision_i
 
         V_resist_LL += sticking * v_LL
         V_resist_SS += (1.0 - sticking) * v_SS
-        V_snack_SS += sticking * v_SS
-        V_snack_LL += (1.0 - sticking) * v_LL
+        V_dessert_SS += sticking * v_SS
+        V_dessert_LL += (1.0 - sticking) * v_LL
 
-    denom = V_snack_SS - V_resist_SS
+    denom = V_dessert_SS - V_resist_SS
     if denom == 0:
         return None
-    return reward_LL * (V_resist_LL - V_snack_LL) / denom
+    return reward_LL * (V_resist_LL - V_dessert_LL) / denom
 
 
 # ---------------------------------------------------------------------------
@@ -101,7 +101,7 @@ def max_ss_resisted(agent, s, delay_SS, delay_LL, reward_LL, horizon, decision_i
 
 def foreseeable_events(agent, environment, state):
     return (
-        agent.choice_horizon(state, "snack", environment),
+        agent.choice_horizon(state, "dessert", environment),
         agent.choice_horizon(state, "resist", environment),
     )
 
@@ -118,7 +118,7 @@ def sticky_outcome_events(agent, environment, state):
     ss_events = []
     ll_events = []
     for t in range(horizon):
-        _, ss_outcomes = environment.simulate(state, "snack")
+        _, ss_outcomes = environment.simulate(state, "dessert")
         _, ll_outcomes = environment.simulate(state, "resist")
         for reward, delay in ss_outcomes.values():
             ss_events.append((delay + t * interval, reward))
@@ -230,10 +230,10 @@ def _ll_sail_trace(
 def _ss_sail_traces(agent, ss_events):
     """SS at the current decision is a tip scatter; later SS get sails back to t=0.
 
-    Sail colour fades with foresight index; numerals stay opaque snack.
+    Sail colour fades with foresight index; numerals stay opaque dessert.
     """
-    base = COLORS["snack_sail"]
-    label_color = COLORS["snack"]
+    base = COLORS["dessert_sail"]
+    label_color = COLORS["dessert"]
     traces = []
     y_max = 0
     n = len(ss_events)
@@ -251,7 +251,7 @@ def _ss_sail_traces(agent, ss_events):
                     "x": [delay],
                     "y": [tip],
                     "marker": {"size": 10, "color": sail_color},
-                    "name": "snack",
+                    "name": "dessert",
                     "showlegend": i == 0,
                     "hovertemplate": "SS @ %{x}h<br>V=%{y:.3f}<extra></extra>",
                 }
@@ -278,7 +278,7 @@ def _ss_sail_traces(agent, ss_events):
                 "x": xs,
                 "y": ys,
                 "line": {"color": sail_color, "width": 2},
-                "name": "snack",
+                "name": "dessert",
                 "showlegend": i == 0,
                 "hovertemplate": "t=%{x}h<br>V=%{y:.3f}<extra></extra>",
             }
@@ -307,8 +307,8 @@ def _ss_sail_traces(agent, ss_events):
 
 # visual characteristics for aggregate-value scatter point
 def _aggregate_traces(action_values, chosen):
-    """Snack/resist aggregates at t=0; chosen action's value numeral is bold."""
-    snack_agg = action_values["snack"]
+    """Dessert/resist aggregates at t=0; chosen action's value numeral is bold."""
+    dessert_agg = action_values["dessert"]
     resist_agg = action_values["resist"]
     label_x = -LABEL_AGG_OFFSET
 
@@ -346,12 +346,12 @@ def _aggregate_traces(action_values, chosen):
         return lab
 
     traces = [
-        agg_marker("snack", snack_agg, COLORS["snack"]),
-        agg_label(snack_agg, COLORS["snack"], chosen == "snack"),
+        agg_marker("dessert", dessert_agg, COLORS["dessert"]),
+        agg_label(dessert_agg, COLORS["dessert"], chosen == "dessert"),
         agg_marker("resist", resist_agg, COLORS["resist"]),
         agg_label(resist_agg, COLORS["resist"], chosen == "resist"),
     ]
-    return traces, max(snack_agg, resist_agg)
+    return traces, max(dessert_agg, resist_agg)
 
 
 # ---------------------------------------------------------------------------
@@ -399,61 +399,61 @@ def _spaced_ys(count, lo, hi):
 
 def _hyp_stack_parts(agent, ss_events, ll_events):
     """Per-day V_hyp contributions for pure-commitment aggregate bars."""
-    snack_parts = [
+    dessert_parts = [
         (delay, agent.value_function(reward, delay)) for delay, reward in ss_events
     ]
     resist_parts = [
         (delay, agent.value_function(reward, delay)) for delay, reward in ll_events
     ]
-    return snack_parts, resist_parts
+    return dessert_parts, resist_parts
 
 
 def _sticky_stack_parts(agent, environment, state):
     """Per-day sticky EV contributions (sum to StickyHypAgent aggregates)."""
     interval = environment.decision_interval
-    snack_days = agent.choice_horizon(state, "snack", environment)
+    dessert_days = agent.choice_horizon(state, "dessert", environment)
     resist_days = agent.choice_horizon(state, "resist", environment)
-    snack_parts = [(t * interval, ev) for t, ev in snack_days]
+    dessert_parts = [(t * interval, ev) for t, ev in dessert_days]
     resist_parts = [(t * interval, ev) for t, ev in resist_days]
-    return snack_parts, resist_parts
+    return dessert_parts, resist_parts
 
 
-def _aggregate_stack_panel(snack_parts, resist_parts, action_values, chosen):
+def _aggregate_stack_panel(dessert_parts, resist_parts, action_values, chosen):
     """Left-panel Σ bars matching visualise_sails.plot_aggregate_stack.
 
-    snack_parts / resist_parts are (hours, contribution) lists that sum to the
+    dessert_parts / resist_parts are (hours, contribution) lists that sum to the
     aggregates. Returns (traces, annotations, y_peak).
     """
-    n = len(snack_parts)
+    n = len(dessert_parts)
     if n == 0:
         return [], [], 1.0
 
-    snack_agg = action_values["snack"]
+    dessert_agg = action_values["dessert"]
     resist_agg = action_values["resist"]
 
-    x_snack, x_resist = 0.0, 1.0
+    x_dessert, x_resist = 0.0, 1.0
     bar_w = 0.55
     bottom_s = 0.0
     bottom_r = 0.0
-    heights = [h for _, h in snack_parts] + [h for _, h in resist_parts]
+    heights = [h for _, h in dessert_parts] + [h for _, h in resist_parts]
     min_label = 0.05 * max(heights) if heights else 0.0
 
     traces = []
-    snack_callouts = []
+    dessert_callouts = []
     resist_callouts = []
 
     for i in range(n):
-        hours_s, h_s = snack_parts[i]
+        hours_s, h_s = dessert_parts[i]
         hours_r, h_r = resist_parts[i]
-        edge_s = 1.2 if chosen == "snack" else 0.5
+        edge_s = 1.2 if chosen == "dessert" else 0.5
         edge_r = 1.2 if chosen == "resist" else 0.5
-        color_s = fade(COLORS["snack_sail"], i, n)
+        color_s = fade(COLORS["dessert_sail"], i, n)
         color_r = fade(COLORS["resist_sail"], i, n)
 
         traces.append(
             {
                 "type": "bar",
-                "x": [x_snack],
+                "x": [x_dessert],
                 "y": [h_s],
                 "base": [bottom_s],
                 "width": [bar_w],
@@ -463,7 +463,7 @@ def _aggregate_stack_panel(snack_parts, resist_parts, action_values, chosen):
                 },
                 "showlegend": False,
                 "hovertemplate": (
-                    f"snack @ {int(hours_s)}h<br>V=%{{y:.3f}}<extra></extra>"
+                    f"dessert @ {int(hours_s)}h<br>V=%{{y:.3f}}<extra></extra>"
                 ),
             }
         )
@@ -485,13 +485,13 @@ def _aggregate_stack_panel(snack_parts, resist_parts, action_values, chosen):
             }
         )
         if h_s >= min_label:
-            snack_callouts.append((hours_s, h_s, bottom_s + h_s / 2))
+            dessert_callouts.append((hours_s, h_s, bottom_s + h_s / 2))
         if h_r >= min_label:
             resist_callouts.append((hours_r, h_r, bottom_r + h_r / 2))
         bottom_s += h_s
         bottom_r += h_r
 
-    y_peak = max(snack_agg, resist_agg) or 1.0
+    y_peak = max(dessert_agg, resist_agg) or 1.0
     annotations = []
 
     def callout_annotations(callouts, x_bar, x_text, *, color, xanchor):
@@ -523,7 +523,7 @@ def _aggregate_stack_panel(snack_parts, resist_parts, action_values, chosen):
             )
 
     callout_annotations(
-        snack_callouts, x_snack, x_snack - 0.85, color=COLORS["snack"], xanchor="right"
+        dessert_callouts, x_dessert, x_dessert - 0.85, color=COLORS["dessert"], xanchor="right"
     )
     callout_annotations(
         resist_callouts, x_resist, x_resist + 0.85, color=COLORS["resist"], xanchor="left"
@@ -532,13 +532,13 @@ def _aggregate_stack_panel(snack_parts, resist_parts, action_values, chosen):
     annotations.extend(
         [
             {
-                "x": x_snack - 0.75,
+                "x": x_dessert - 0.75,
                 "y": y_peak * 1.04,
                 "xref": "x",
                 "yref": "y",
-                "text": f"<b>Σ snack = {snack_agg:.2f}</b>",
+                "text": f"<b>Σ dessert = {dessert_agg:.2f}</b>",
                 "showarrow": False,
-                "font": {"size": 12, "color": COLORS["snack"]},
+                "font": {"size": 12, "color": COLORS["dessert"]},
                 "xanchor": "left",
                 "yanchor": "bottom",
             },
@@ -566,7 +566,7 @@ def _sails_dual_panel(
     ll_events,
     action,
     action_values,
-    snack_parts,
+    dessert_parts,
     resist_parts,
     *,
     title_prefix,
@@ -580,7 +580,7 @@ def _sails_dual_panel(
     """
     n = len(ll_events)
     stack_traces, stack_annotations, stack_ymax = _aggregate_stack_panel(
-        snack_parts, resist_parts, action_values, action
+        dessert_parts, resist_parts, action_values, action
     )
 
     sail_traces = []
@@ -649,7 +649,7 @@ def _sails_dual_panel(
         "horizon": n,
         "choice": action,
         "action_values": action_values,
-        "ll_ss_gap": action_values["resist"] - action_values["snack"],
+        "ll_ss_gap": action_values["resist"] - action_values["dessert"],
     }
     if extra_meta:
         meta.update(extra_meta)
@@ -665,7 +665,7 @@ def _sails_dual_panel(
                 "domain": stack_domain,
                 "range": [-1.25, 2.25],
                 "tickvals": [0.0, 1.0],
-                "ticktext": ["snack", "resist"],
+                "ticktext": ["dessert", "resist"],
                 "zeroline": False,
             },
             "yaxis": {
@@ -719,7 +719,7 @@ def sails_frame(agent, environment, state, *, day=None):
     ss_events, ll_events = foreseeable_events(agent, environment, state)
     n = len(ll_events)
     action, action_values = agent.choose_action(state, environment)
-    snack_parts, resist_parts = _hyp_stack_parts(agent, ss_events, ll_events)
+    dessert_parts, resist_parts = _hyp_stack_parts(agent, ss_events, ll_events)
 
     if day is not None:
         title_prefix = f"Day {day}  |  Choice sails with a horizon of {n} days"
@@ -732,7 +732,7 @@ def sails_frame(agent, environment, state, *, day=None):
         ll_events,
         action,
         action_values,
-        snack_parts,
+        dessert_parts,
         resist_parts,
         title_prefix=title_prefix,
         kind="sails",
@@ -752,7 +752,7 @@ def sticky_sails_frame(agent, environment, state):
     ss_events, ll_events = sticky_outcome_events(agent, environment, state)
     n = len(ll_events)
     action, action_values = agent.choose_action(state, environment)
-    snack_parts, resist_parts = _sticky_stack_parts(agent, environment, state)
+    dessert_parts, resist_parts = _sticky_stack_parts(agent, environment, state)
     perceived_s = getattr(agent, "perceived_s", None)
 
     return _sails_dual_panel(
@@ -761,7 +761,7 @@ def sticky_sails_frame(agent, environment, state):
         ll_events,
         action,
         action_values,
-        snack_parts,
+        dessert_parts,
         resist_parts,
         title_prefix=(
             f"Sticky sails | s={perceived_s} | "
@@ -777,11 +777,11 @@ def sticky_step_frame(agent, environment, state, *, day=None, last_info=None):
     Stepped sticky sails + Beta posterior (sticky_step.py).
 
     Left: SS / LL hyperbolic sails and sticky EV aggregates under perceived s.
-    Right: Beta posterior over stickiness with s_true and ŝ overlays.
+    Right: Beta posterior with ŝ (learn On) or fixed prior-mean (learn Off).
 
-    Environment owns beta_belief (always updates on stick/switch). With
-    learn_stickiness On, foresight keeps initialised perceived_s until the
-    first stick/switch obs, then tracks ŝ.
+    Environment owns beta_belief (always updates on stick/switch).
+    learn Off → foresight/rolls use preset perceived_s (= prior mean α₀/(α₀+β₀)).
+    learn On  → foresight/rolls track posterior mean ŝ.
     """
     beta_belief = getattr(environment, "beta_belief", None)
     if beta_belief is None:
@@ -791,7 +791,8 @@ def sticky_step_frame(agent, environment, state, *, day=None, last_info=None):
     n = agent.get_horizon(state, environment)
     s_hat = environment.s_hat()
     perceived_s = agent.perceived_stickiness(environment)
-    true_s = float(environment.true_stickiness)
+    prior_mean = beta_belief.prior_mean()
+    learn = bool(agent.learn_stickiness)
     intent, action_values = agent.choose_action(state, environment)
 
     # --- Left: sails (same geometry as sticky_step.draw_frame) ---
@@ -835,6 +836,10 @@ def sticky_step_frame(agent, environment, state, *, day=None, last_info=None):
     # --- Right: Beta posterior ---
     xs, dens = beta_belief.pdf_grid(n=251)
     y_top = max(dens) if dens else 1.0
+    marker_s = perceived_s if learn else prior_mean
+    marker_name = (
+        f"ŝ={marker_s:.2f}" if learn else f"fixed s=α/(α+β)={prior_mean:.2f}"
+    )
     belief_traces = [
         {
             "type": "scatter",
@@ -852,21 +857,10 @@ def sticky_step_frame(agent, environment, state, *, day=None, last_info=None):
         {
             "type": "scatter",
             "mode": "lines",
-            "x": [true_s, true_s],
-            "y": [0.0, y_top * 1.15 if y_top else 1.0],
-            "line": {"color": COLORS["true_s"], "width": 1.5, "dash": "dash"},
-            "name": f"s_true={true_s:.2f}",
-            "xaxis": "x2",
-            "yaxis": "y2",
-            "hoverinfo": "skip",
-        },
-        {
-            "type": "scatter",
-            "mode": "lines",
-            "x": [s_hat, s_hat],
+            "x": [marker_s, marker_s],
             "y": [0.0, y_top * 1.15 if y_top else 1.0],
             "line": {"color": COLORS["perceived_s"], "width": 1.5},
-            "name": f"ŝ={s_hat:.2f}",
+            "name": marker_name,
             "xaxis": "x2",
             "yaxis": "y2",
             "hoverinfo": "skip",
@@ -878,6 +872,10 @@ def sticky_step_frame(agent, environment, state, *, day=None, last_info=None):
     # Realized action from the previous step (None on day 0 before any roll)
     last_realized = last_info.get("realized") if last_info else None
     last_stuck = last_info.get("stuck") if last_info else None
+    last_intent = last_info.get("intent") if last_info else None
+    last_aligned = last_info.get("aligned") if last_info else None
+    if last_aligned is None and last_realized is not None and last_intent is not None:
+        last_aligned = last_realized == last_intent
     if last_realized is None:
         last_action_html = "Last action: —"
         last_action_label = None
@@ -888,14 +886,31 @@ def sticky_step_frame(agent, environment, state, *, day=None, last_info=None):
             roll = "stick"
         else:
             roll = "switch"
-        last_action_html = f"Last action: <b>{last_realized}</b> ({roll})"
-        last_action_label = f"{last_realized} ({roll})"
+        if last_aligned:
+            align_html = '<span style="color:#2e7d32;font-weight:600;">aligned with intent</span>'
+            align_label = "aligned"
+        else:
+            align_html = (
+                '<span style="color:#c62828;font-weight:600;">'
+                f"diverged from intent ({last_intent})</span>"
+            )
+            align_label = f"diverged (wanted {last_intent})"
+        last_action_html = (
+            f"Last action: <b>{last_realized}</b> ({roll}) · {align_html}"
+        )
+        last_action_label = f"{last_realized} ({roll}, {align_label})"
 
+    if learn:
+        s_line = f"Perceived stickiness={perceived_s:.3f} (learning)"
+    else:
+        s_line = (
+            f"Fixed stickiness={prior_mean:.3f} "
+            f"(prior mean α/(α+β), α={beta_belief.alpha0:g} β={beta_belief.beta0:g})"
+        )
     title = {
         "text": (
-            f"{day_bit}Perceived stickiness={perceived_s:.3f} | "
-            f"True stickiness={true_s}  |  horizon={n}  |  "
-            f"<b>Agent would choose {intent}</b><br>"
+            f"{day_bit}{s_line}<br>"
+            f"horizon={n}  |  <b>Agent would choose {intent}</b><br>"
             f"{last_action_html}"
         ),
         "font": {"size": 15, "color": "#1a1d23"},
@@ -914,11 +929,13 @@ def sticky_step_frame(agent, environment, state, *, day=None, last_info=None):
         "horizon": n,
         "choice": intent,
         "action_values": action_values,
-        "ll_ss_gap": action_values["resist"] - action_values["snack"],
+        "ll_ss_gap": action_values["resist"] - action_values["dessert"],
         "perceived_s": perceived_s,
         "s_hat": s_hat,
-        "true_stickiness": true_s,
-        "learn_stickiness": bool(agent.learn_stickiness),
+        "prior_mean": prior_mean,
+        "prior_alpha": beta_belief.alpha0,
+        "prior_beta": beta_belief.beta0,
+        "learn_stickiness": learn,
         "alpha": beta_belief.alpha,
         "beta": beta_belief.beta,
         "n_stick": beta_belief.n_stick(),
@@ -926,9 +943,10 @@ def sticky_step_frame(agent, environment, state, *, day=None, last_info=None):
         "last_action_label": last_action_label,
     }
     if last_info:
-        meta["last_intent"] = last_info.get("intent")
+        meta["last_intent"] = last_intent
         meta["last_realized"] = last_realized
         meta["last_stuck"] = last_stuck
+        meta["last_aligned"] = last_aligned
 
     return {
         "kind": "sticky_step",
@@ -991,9 +1009,9 @@ def sticky_step_frame(agent, environment, state, *, day=None, last_info=None):
 
 
 def aggregate_frame(agent, environment, state):
-    """Bundled resist sail + snack aggregate, matching aggregate_sail.py."""
+    """Bundled resist sail + dessert aggregate, matching aggregate_sail.py."""
     action, action_values = agent.choose_action(state, environment)
-    ss_events = agent.choice_horizon(state, "snack", environment)
+    ss_events = agent.choice_horizon(state, "dessert", environment)
     ll_events = agent.choice_horizon(state, "resist", environment)
     ll_delay = environment.rewards["LL"]["delay"]
 
@@ -1012,9 +1030,9 @@ def aggregate_frame(agent, environment, state):
     y_max = max(max(ys) if ys else 0, ss_value)
 
     resist_chosen = action == "resist"
-    snack_chosen = action == "snack"
+    dessert_chosen = action == "dessert"
     resist_w = 3.5 if resist_chosen else 2.0
-    snack_size = 16 if snack_chosen else 10
+    dessert_size = 16 if dessert_chosen else 10
     resist_size = 14 if resist_chosen else 10
 
     traces = [
@@ -1078,19 +1096,19 @@ def aggregate_frame(agent, environment, state):
             "x": [0],
             "y": [ss_value],
             "marker": {
-                "size": snack_size,
-                "color": COLORS["snack"],
+                "size": dessert_size,
+                "color": COLORS["dessert"],
                 "opacity": 1.0,
-                "line": {"color": COLORS["snack"], "width": 2.5 if snack_chosen else 0},
+                "line": {"color": COLORS["dessert"], "width": 2.5 if dessert_chosen else 0},
             },
-            "name": "snack" + (" ★" if snack_chosen else ""),
-            "hovertemplate": "snack=%{y:.3f}<extra></extra>",
+            "name": "dessert" + (" ★" if dessert_chosen else ""),
+            "hovertemplate": "dessert=%{y:.3f}<extra></extra>",
         },
         _value_label(
             0,
             ss_value,
             f"{ss_value:.2f}",
-            color=COLORS["snack"],
+            color=COLORS["dessert"],
             position="bottom left",
         ),
     ]
@@ -1101,9 +1119,9 @@ def aggregate_frame(agent, environment, state):
             "size": 14,
             "family": "Arial Black, Helvetica Neue, sans-serif",
         }
-    if snack_chosen:
+    if dessert_chosen:
         traces[-1]["textfont"] = {
-            "color": COLORS["snack"],
+            "color": COLORS["dessert"],
             "size": 14,
             "family": "Arial Black, Helvetica Neue, sans-serif",
         }
@@ -1351,7 +1369,7 @@ def hyperbolic_ss_ll_frame(
             "x": xs_ss,
             "y": ys_ss,
             "line": {
-                "color": COLORS["snack"],
+                "color": COLORS["dessert"],
                 "width": ss_style["width"],
                 "dash": ss_style["dash"],
             },
@@ -1369,7 +1387,7 @@ def hyperbolic_ss_ll_frame(
             ],
             "textposition": "top center",
             "textfont": {
-                "color": COLORS["snack"],
+                "color": COLORS["dessert"],
                 "size": 14 if preference == "SS" else 12,
                 "family": (
                     "Arial Black, sans-serif"
@@ -1379,7 +1397,7 @@ def hyperbolic_ss_ll_frame(
             },
             "marker": {
                 "size": ss_style["marker"],
-                "color": COLORS["snack"],
+                "color": COLORS["dessert"],
                 "opacity": ss_style["opacity"],
                 "line": {
                     "width": 2 if preference == "SS" else 0,
@@ -1463,7 +1481,7 @@ def hyperbolic_ss_ll_frame(
                 "y0": 0,
                 "y1": 1,
                 "yref": "paper",
-                "line": {"color": COLORS["snack"], "width": 1, "dash": "dash"},
+                "line": {"color": COLORS["dessert"], "width": 1, "dash": "dash"},
                 "opacity": 0.55,
             }
         )

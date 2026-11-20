@@ -7,10 +7,10 @@ Easy to reject later:
 
 Figure layout (one window, two panels):
 
-  Left  — snack-first choice trajectory (red fills)
+  Left  — dessert-first choice trajectory (red fills)
   Right — resist-first choice trajectory (blue fills)
 
-  Rows = foresight day t (0 at top). Two tracks per row: snack | resist.
+  Rows = foresight day t (0 at top). Two tracks per row: dessert | resist.
   Fill length = compounding visit probability under stickiness:
     P(a_t = a0 | a_0 = a0) = stick_p_t = 1/2 * (1 + (2s - 1)^t)
     P(other at t)          = 1 - stick_p_t
@@ -21,12 +21,12 @@ import matplotlib.pyplot as plt
 import matplotlib.colors as mcolors
 
 COLORS = {
-    "snack": "#c44e52",
+    "dessert": "#c44e52",
     "resist": "#4c72b0",
     "track": "#e8e8e8",
 }
 
-# Horizontal gap between snack and resist tracks within a panel
+# Horizontal gap between dessert and resist tracks within a panel
 COL_GAP = 0.08
 
 
@@ -41,8 +41,8 @@ def foresight_rows(agent, environment, state):
 
 
 def _track_probs(stick_p, a0):
-    """P(visit snack), P(visit resist) given today's candidate a0."""
-    if a0 == "snack":
+    """P(visit dessert), P(visit resist) given today's candidate a0."""
+    if a0 == "dessert":
         return stick_p, 1.0 - stick_p
     if a0 == "resist":
         return 1.0 - stick_p, stick_p
@@ -101,9 +101,9 @@ def _draw_beaker_ticks(axes, y, track_left, track_right, bar_h, *, from_right=Fa
 
 
 def plot_choice_trajectory(axes, rows, a0, color):
-    """Horizontal fill bars: snack | resist tracks, day 0 at top.
+    """Horizontal fill bars: dessert | resist tracks, day 0 at top.
 
-    Snack fills left→right; resist fills right→left.
+    Dessert fills left→right; resist fills right→left.
     Empty track to 1.0; filled segment length = visit probability; numeric label.
     Beaker-style ticks mark 0.1 steps (major at 0.25 / 0.5 / 0.75).
     Both tracks use `color` (same hue for the whole panel).
@@ -118,9 +118,9 @@ def plot_choice_trajectory(axes, rows, a0, color):
 
     for row in rows:
         t = row["t"]
-        p_snack, p_resist = _track_probs(row["stick_p"], a0)
+        p_dessert, p_resist = _track_probs(row["stick_p"], a0)
 
-        # snack track (column 0 → 1): fill from the left
+        # dessert track (column 0 → 1): fill from the left
         axes.barh(
             t,
             1.0,
@@ -133,7 +133,7 @@ def plot_choice_trajectory(axes, rows, a0, color):
         )
         axes.barh(
             t,
-            p_snack,
+            p_dessert,
             left=0.0,
             height=bar_h,
             color=color,
@@ -143,13 +143,13 @@ def plot_choice_trajectory(axes, rows, a0, color):
         )
         _draw_beaker_ticks(axes, t, 0.0, 1.0, bar_h, from_right=False)
         axes.text(
-            min(p_snack, 0.98) if p_snack >= 0.12 else p_snack + 0.03,
+            min(p_dessert, 0.98) if p_dessert >= 0.12 else p_dessert + 0.03,
             t,
-            f"{p_snack:.3f}",
+            f"{p_dessert:.3f}",
             va="center",
-            ha="right" if p_snack >= 0.12 else "left",
+            ha="right" if p_dessert >= 0.12 else "left",
             fontsize=9,
-            color=_label_ink(color, p_snack) if p_snack >= 0.12 else "#333333",
+            color=_label_ink(color, p_dessert) if p_dessert >= 0.12 else "#333333",
             zorder=5,
         )
 
@@ -199,7 +199,7 @@ def plot_choice_trajectory(axes, rows, a0, color):
     axes.set_yticks(list(range(n)))
     axes.set_yticklabels([f"day {t}" for t in range(n)])
     axes.set_xticks([0.5, resist_left + 0.5])
-    axes.set_xticklabels(["snack", "resist"])
+    axes.set_xticklabels(["dessert", "resist"])
     axes.set_xlabel("action")
     axes.set_title(
         f"{a0}-first trajectory\n"
@@ -212,13 +212,13 @@ def plot_choice_trajectory(axes, rows, a0, color):
 
 
 def show_sticky_breakdown(agent, environment, state, action_values, chosen, s):
-    """Open twin choice-trajectory fill-bar panels (snack-first | resist-first)."""
+    """Open twin choice-trajectory fill-bar panels (dessert-first | resist-first)."""
     rows = foresight_rows(agent, environment, state)
-    fig, (ax_snack, ax_resist) = plt.subplots(
+    fig, (ax_dessert, ax_resist) = plt.subplots(
         1, 2, figsize=(11, max(4.5, 0.45 * max(len(rows), 1) + 2.2)),
         constrained_layout=True,
     )
-    plot_choice_trajectory(ax_snack, rows, "snack", COLORS["snack"])
+    plot_choice_trajectory(ax_dessert, rows, "dessert", COLORS["dessert"])
     plot_choice_trajectory(ax_resist, rows, "resist", COLORS["resist"])
     fig.suptitle(
         f"Sticky choice trajectories  |  s={s}  |  choose {chosen}",

@@ -1,7 +1,7 @@
 ### **Environment**
 
 > The environment is just there to lay out the series of subsequent decisions for the agent. Each 'choice node' is ultimately still a choice made in the 'present' (at time step of said choice)
-> For this simulation, the agent is on a diet. Once a day, the agent chooses between 'snacking' or resisting. The  LL received is the utility of weighing in the next morning and not gaining weight. 
+> For this simulation, the agent is on a diet. Once a day, the agent chooses between 'desserting' or resisting. The  LL received is the utility of weighing in the next morning and not gaining weight. 
 
 **Properties**
 - Timeline of sequential decisions with recurring decision nodes between a shorter, sooner (immediate) reward and large, later reward.

@@ -1,10 +1,10 @@
 '''
-Animate a full weighted sweep of snack-first sticky trajectories.
+Animate a full weighted sweep of dessert-first sticky trajectories.
 
-Bars start empty. Every snack-first path (2^(H-1)) is flashed once; fills
+Bars start empty. Every dessert-first path (2^(H-1)) is flashed once; fills
 accumulate path probability mass and converge exactly to stick_p_t.
 
-Line graph hops snack ↔ resist for the currentlyflashed path
+Line graph hops dessert ↔ resist for the currentlyflashed path
 
 Refuses to run when horizon > 14 (too many paths to animate).
 
@@ -53,7 +53,7 @@ MAX_HORIZON = 14          # stop above this (2^(H-1) paths)
 # ------------------------------------------------------------------------
 
 COLORS = {
-    "snack": "#c44e52",
+    "dessert": "#c44e52",
     "resist": "#4c72b0",
     "track": "#e8e8e8",
     "target": "#888888",
@@ -79,20 +79,20 @@ def path_probability(path, s: float) -> float:
     return p
 
 
-def enumerate_snack_first_paths(horizon: int, s: float):
-    """All snack-first trajectories and their sticky probabilities.
-    Day 0 is snack; days 1..H-1 free → 2^(H-1) paths. Bits of the index
-    choose snack (0) / resist (1) at each later day.
+def enumerate_dessert_first_paths(horizon: int, s: float):
+    """All dessert-first trajectories and their sticky probabilities.
+    Day 0 is dessert; days 1..H-1 free → 2^(H-1) paths. Bits of the index
+    choose dessert (0) / resist (1) at each later day.
     """
     n_free = max(horizon - 1, 0)
     n_paths = 2**n_free
     paths = []
     probs = []
     for i in range(n_paths):
-        path = ["snack"]
+        path = ["dessert"]
         for t in range(1, horizon):
             bit = (i >> (t - 1)) & 1
-            path.append("resist" if bit else "snack")
+            path.append("resist" if bit else "dessert")
         paths.append(path)
         probs.append(path_probability(path, s))
     return paths, np.asarray(probs, dtype=float)
@@ -141,12 +141,12 @@ def _draw_beaker_ticks(axes, y, track_left, track_right, *, from_right=False):
 
 
 class TrajectoryPanel:
-    """Snack-first panel; fills = accumulated path-probability mass."""
+    """Dessert-first panel; fills = accumulated path-probability mass."""
 
     def __init__(self, axes, s: float, horizon: int, paths, probs):
         self.ax = axes
-        self.a0 = "snack"
-        self.color = COLORS["snack"]
+        self.a0 = "dessert"
+        self.color = COLORS["dessert"]
         self.s = s
         self.horizon = horizon
         self.paths = paths
@@ -156,12 +156,12 @@ class TrajectoryPanel:
         self.resist_right = self.resist_left + 1.0
 
         self.mass_total = 0.0
-        self.mass_snack = np.zeros(horizon, dtype=float)
+        self.mass_dessert = np.zeros(horizon, dtype=float)
         self.mass_resist = np.zeros(horizon, dtype=float)
 
-        self.snack_fills = []
+        self.dessert_fills = []
         self.resist_fills = []
-        self.snack_labels = []
+        self.dessert_labels = []
         self.resist_labels = []
         self.highlights = []
         self.current_path = None
@@ -179,10 +179,10 @@ class TrajectoryPanel:
         self.ax.set_yticks(list(range(n)))
         self.ax.set_yticklabels([f"day {t}" for t in range(n)])
         self.ax.set_xticks([0.5, self.resist_left + 0.5])
-        self.ax.set_xticklabels(["snack", "resist"])
+        self.ax.set_xticklabels(["dessert", "resist"])
         self.ax.set_xlabel("action")
         self.ax.set_title(
-            "Effective stickiness (Snack first)"
+            "Effective stickiness (Dessert first)"
         )
         self.ax.grid(False)
         for spine in ("top", "right"):
@@ -217,10 +217,10 @@ class TrajectoryPanel:
                 self.ax, t, self.resist_left, self.resist_right, from_right=True
             )
 
-            p_snack = stick_p_t(self.s, t)
-            p_resist = 1.0 - p_snack
+            p_dessert = stick_p_t(self.s, t)
+            p_resist = 1.0 - p_dessert
             self.ax.plot(
-                [p_snack, p_snack],
+                [p_dessert, p_dessert],
                 [t - BAR_H / 2, t + BAR_H / 2],
                 color=COLORS["target"],
                 linestyle="--",
@@ -240,7 +240,7 @@ class TrajectoryPanel:
 
     def _init_fills(self):
         for t in range(self.horizon):
-            snack = Rectangle(
+            dessert = Rectangle(
                 (0.0, t - BAR_H / 2),
                 0.0,
                 BAR_H,
@@ -258,11 +258,11 @@ class TrajectoryPanel:
                 linewidth=0.6,
                 zorder=2,
             )
-            self.ax.add_patch(snack)
+            self.ax.add_patch(dessert)
             self.ax.add_patch(resist)
-            self.snack_fills.append(snack)
+            self.dessert_fills.append(dessert)
             self.resist_fills.append(resist)
-            self.snack_labels.append(
+            self.dessert_labels.append(
                 self.ax.text(
                     0.03,
                     t,
@@ -334,7 +334,7 @@ class TrajectoryPanel:
         self.current_prob = float(self.probs[path_index])
         for t, action in enumerate(path):
             rect = self.highlights[t]
-            if action == "snack":
+            if action == "dessert":
                 rect.set_xy((0.0, t - BAR_H / 2))
             else:
                 rect.set_xy((self.resist_left, t - BAR_H / 2))
@@ -349,8 +349,8 @@ class TrajectoryPanel:
         path = self.current_path
         w = self.current_prob
         for t, action in enumerate(path):
-            if action == "snack":
-                self.mass_snack[t] += w
+            if action == "dessert":
+                self.mass_dessert[t] += w
             else:
                 self.mass_resist[t] += w
         self.mass_total += w
@@ -369,27 +369,27 @@ class TrajectoryPanel:
         self.commit_path(refresh=True, clear_highlight=False)
 
     def empirical_margins(self):
-        """Return (p_snack[t], p_resist[t]) from accumulated mass."""
+        """Return (p_dessert[t], p_resist[t]) from accumulated mass."""
         denom = self.mass_total if self.mass_total > 0 else 1.0
-        snack = self.mass_snack / denom
+        dessert = self.mass_dessert / denom
         resist = self.mass_resist / denom
-        return snack, resist
+        return dessert, resist
 
     def _refresh_fills(self):
-        p_snack_all, p_resist_all = self.empirical_margins()
+        p_dessert_all, p_resist_all = self.empirical_margins()
         for t in range(self.horizon):
-            p_snack = float(p_snack_all[t])
+            p_dessert = float(p_dessert_all[t])
             p_resist = float(p_resist_all[t])
 
-            self.snack_fills[t].set_x(0.0)
-            self.snack_fills[t].set_width(p_snack)
+            self.dessert_fills[t].set_x(0.0)
+            self.dessert_fills[t].set_width(p_dessert)
 
             self.resist_fills[t].set_x(self.resist_right - p_resist)
             self.resist_fills[t].set_width(p_resist)
 
             self._set_label(
-                self.snack_labels[t],
-                p_snack,
+                self.dessert_labels[t],
+                p_dessert,
                 from_right=False,
                 track_right=1.0,
             )
@@ -403,7 +403,7 @@ class TrajectoryPanel:
 
 class TrajectoryHopGraph:
 
-    Y_SNACK = 1.0
+    Y_DESSERT = 1.0
     Y_RESIST = 0.0
 
     def __init__(self, axes, horizon: int):
@@ -432,8 +432,8 @@ class TrajectoryHopGraph:
         n = self.horizon
         self.ax.set_xlim(-0.5, max(n - 0.5, 0.5))
         self.ax.set_ylim(-0.45, 1.45)
-        self.ax.set_yticks([self.Y_RESIST, self.Y_SNACK])
-        self.ax.set_yticklabels(["resist", "snack"])
+        self.ax.set_yticks([self.Y_RESIST, self.Y_DESSERT])
+        self.ax.set_yticklabels(["resist", "dessert"])
         self.ax.set_xticks(list(range(n)))
         self.ax.set_xticklabels([f"day {t}" for t in range(n)])
         self.ax.set_xlabel("day")
@@ -441,7 +441,7 @@ class TrajectoryHopGraph:
         self.ax.axhspan(
             0.5,
             1.45,
-            facecolor=COLORS["snack"],
+            facecolor=COLORS["dessert"],
             alpha=0.06,
             zorder=0,
         )
@@ -461,13 +461,13 @@ class TrajectoryHopGraph:
         xs = np.arange(len(path), dtype=float)
         ys = np.array(
             [
-                self.Y_SNACK if action == "snack" else self.Y_RESIST
+                self.Y_DESSERT if action == "dessert" else self.Y_RESIST
                 for action in path
             ],
             dtype=float,
         )
         colors = [
-            COLORS["snack"] if action == "snack" else COLORS["resist"]
+            COLORS["dessert"] if action == "dessert" else COLORS["resist"]
             for action in path
         ]
         self.line.set_data(xs, ys)
@@ -497,31 +497,31 @@ def main():
     s = float(perceived_s)
 
     n_all = 2**horizon
-    n_snack_first = 2 ** max(horizon - 1, 0)
+    n_dessert_first = 2 ** max(horizon - 1, 0)
     print(f"Horizon H = {horizon}  Perceived stickiness s = {s}")
     print(f"True trajectories (any a0):     2^{horizon} = {n_all}")
     print(
-        f"True trajectories (snack-first): 2^{max(horizon - 1, 0)} = {n_snack_first}  "
+        f"True trajectories (dessert-first): 2^{max(horizon - 1, 0)} = {n_dessert_first}  "
         "(day 0 fixed)"
     )
 
     if horizon > MAX_HORIZON:
         print(
             f"\nSTOP: horizon={horizon} exceeds MAX_HORIZON={MAX_HORIZON} "
-            f"({n_snack_first} snack-first paths).\n"
+            f"({n_dessert_first} dessert-first paths).\n"
             f"Lower agent horizon in agents/agent_configs.py (or raise MAX_HORIZON) "
             f"before running the full weighted sweep."
         )
         sys.exit(1)
 
-    n_redraws = max(1, (n_snack_first + PATHS_PER_FRAME - 1) // PATHS_PER_FRAME)
-    print(f"Animating full weighted sweep of all {n_snack_first} snack-first paths.")
+    n_redraws = max(1, (n_dessert_first + PATHS_PER_FRAME - 1) // PATHS_PER_FRAME)
+    print(f"Animating full weighted sweep of all {n_dessert_first} dessert-first paths.")
     print(
         f"Speed: INTERVAL_MS={INTERVAL_MS}, PATHS_PER_FRAME={PATHS_PER_FRAME} "
         f"(~{n_redraws} redraws). Raise PATHS_PER_FRAME to go faster."
     )
 
-    paths, probs = enumerate_snack_first_paths(horizon, s)
+    paths, probs = enumerate_dessert_first_paths(horizon, s)
     print(f"Sum of path probabilities = {float(probs.sum()):.6f} (expect ~1)")
 
     rng = np.random.default_rng(RNG_SEED)
@@ -560,9 +560,9 @@ def main():
 
     def _artists():
         return [
-            *panel.snack_fills,
+            *panel.dessert_fills,
             *panel.resist_fills,
-            *panel.snack_labels,
+            *panel.dessert_labels,
             *panel.resist_labels,
             *panel.highlights,
             *hop.artists,
@@ -579,13 +579,13 @@ def main():
             hop.clear()
             panel._refresh_fills()
             progress.set_text(f"{committed['n']} / {n_paths}")
-            snack, _ = panel.empirical_margins()
+            dessert, _ = panel.empirical_margins()
             print("\nFinal empirical vs stick_p_t (should match):")
             for t in range(horizon):
                 th = stick_p_t(s, t)
                 print(
-                    f"  day {t}: emp={snack[t]:.6f}  theory={th:.6f}  "
-                    f"err={abs(snack[t] - th):.2e}"
+                    f"  day {t}: emp={dessert[t]:.6f}  theory={th:.6f}  "
+                    f"err={abs(dessert[t] - th):.2e}"
                 )
             return _artists()
 

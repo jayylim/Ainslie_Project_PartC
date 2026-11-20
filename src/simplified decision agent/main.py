@@ -20,7 +20,7 @@ env_params = {
     "start": 0,
     "decision_interval": 24,  # hours between decisions
     "rewards": {
-        "SS": {"value": 3, "delay": 0},   # snack now
+        "SS": {"value": 3, "delay": 0},   # dessert now
         "LL": {"value": 20, "delay": 12},  # hours after choice until weigh-in
     },
 }
@@ -28,8 +28,8 @@ env_params = {
 # StickyTimelineEnvironment only (sticky_step). Other sticky demos use
 # sticky_params["perceived_s"] on the agent with plain TimelineEnvironment.
 sticky_env_params = {
-    "prior_alpha": 9.0,
-    "prior_beta": 1.0,
+    "prior_alpha": 1,
+    "prior_beta": 1,
 }
 
 max_steps = None  # used when env length is None to cap this run as a safety stop. Should always be none for steppable infinite environments.

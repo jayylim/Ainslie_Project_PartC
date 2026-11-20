@@ -15,13 +15,13 @@ class TimelineEnvironment:
         self.time_step = start
         self.decision_interval = decision_interval  # hours between choices
         self.action_map = {
-            "snack": "SS",
+            "dessert": "SS",
             "resist": "LL",
         }
 
     # === Agent-facing layer ===
     def get_actions(self, state=None):
-        return ["snack", "resist"]
+        return ["dessert", "resist"]
 
     def simulate(self, state, action):
         """One-step lookahead without mutating environment time."""

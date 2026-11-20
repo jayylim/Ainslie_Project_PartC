@@ -7,10 +7,10 @@ LL reward is fixed (from env_params). Uses the sticky_decisions model:
 
     expected_day_value = sticking * V_hyp(same) + (1 - sticking) * V_hyp(other)
 
-With LL fixed and SS = x, set V(resist) = V(snack) and solve for x.
+With LL fixed and SS = x, set V(resist) = V(dessert) and solve for x.
 That x is both:
   - the maximum SS that can still be resisted (prefer LL at or below)
-  - the minimum SS that makes the agent choose snack over LL
+  - the minimum SS that makes the agent choose dessert over LL
 
 No environment rebuild: delay_LL is only a number in V_hyp.
 
@@ -48,15 +48,15 @@ stickiness_min, stickiness_max, n_stickiness_points = 0.0, 1.0, 100
 
 def max_ss_resisted(agent, s, delay_SS, delay_LL, reward_LL, horizon, decision_interval):
     """
-    Maximum SS such that V(resist) >= V(snack) under stickiness s (LL fixed).
+    Maximum SS such that V(resist) >= V(dessert) under stickiness s (LL fixed).
 
     """
     # V(resist) = reward_LL * V_resist_LL + SS * V_resist_SS
-    # V(snack)  = reward_LL * V_snack_LL  + SS * V_snack_SS
+    # V(dessert)  = reward_LL * V_dessert_LL  + SS * V_dessert_SS
     V_resist_LL = 0.0
     V_resist_SS = 0.0
-    V_snack_LL = 0.0
-    V_snack_SS = 0.0
+    V_dessert_LL = 0.0
+    V_dessert_SS = 0.0
 
     for t in range(horizon):
         sticking = stick_p_t(s, t)
@@ -70,16 +70,16 @@ def max_ss_resisted(agent, s, delay_SS, delay_LL, reward_LL, horizon, decision_i
         V_resist_LL += sticking * v_LL
         V_resist_SS += (1.0 - sticking) * v_SS
 
-        # snack today: same = SS, other = LL
-        V_snack_SS += sticking * v_SS
-        V_snack_LL += (1.0 - sticking) * v_LL
+        # dessert today: same = SS, other = LL
+        V_dessert_SS += sticking * v_SS
+        V_dessert_LL += (1.0 - sticking) * v_LL
 
-    # Set V(resist) = V(snack) with LL = reward_LL, SS = x:
+    # Set V(resist) = V(dessert) with LL = reward_LL, SS = x:
     #   reward_LL * V_resist_LL + x * V_resist_SS
-    #     = reward_LL * V_snack_LL + x * V_snack_SS
-    #   x * (V_snack_SS - V_resist_SS) = reward_LL * (V_resist_LL - V_snack_LL)
-    #   x = reward_LL * (V_resist_LL - V_snack_LL) / (V_snack_SS - V_resist_SS)
-    solve_x = reward_LL * (V_resist_LL - V_snack_LL) / (V_snack_SS - V_resist_SS)
+    #     = reward_LL * V_dessert_LL + x * V_dessert_SS
+    #   x * (V_dessert_SS - V_resist_SS) = reward_LL * (V_resist_LL - V_dessert_LL)
+    #   x = reward_LL * (V_resist_LL - V_dessert_LL) / (V_dessert_SS - V_resist_SS)
+    solve_x = reward_LL * (V_resist_LL - V_dessert_LL) / (V_dessert_SS - V_resist_SS)
     return solve_x
 
 

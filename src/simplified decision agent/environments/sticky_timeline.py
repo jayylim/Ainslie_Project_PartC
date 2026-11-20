@@ -23,7 +23,7 @@ import random
 from environments.timeline import TimelineEnvironment
 from learning.bayesian_stickiness import BayesianStickinessBelief
 
-OTHER = {"snack": "resist", "resist": "snack"}
+OTHER = {"dessert": "resist", "resist": "dessert"}
 
 
 class StickyTimelineEnvironment(TimelineEnvironment):
@@ -123,6 +123,7 @@ class StickyTimelineEnvironment(TimelineEnvironment):
             "intent": intent,
             "realized": realized,
             "stuck": stuck,
+            "aligned": realized == intent,
             "stickiness": s,
             "s_hat": self.s_hat(),
         }
