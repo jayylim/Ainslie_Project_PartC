@@ -52,3 +52,12 @@ export const DEFAULT_CONFIG = {
   discount_factor: agentParams.discount_factor,
   max_steps: maxSteps,
 };
+
+/** Defaults for the Hyperbolic Curves demo (independent of main agent params). */
+export const HYPERBOLIC_DEFAULT_CONFIG = {
+  ...DEFAULT_CONFIG,
+  ss_value: 11,
+  ss_delay: 9,
+  ll_value: 20,
+  ll_delay: 12,
+};

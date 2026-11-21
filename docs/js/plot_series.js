@@ -1107,11 +1107,20 @@ export function ss_delay_from_ll(ll_delay) {
   return Math.max(0, Math.round(0.75 * Math.trunc(ll_delay)));
 }
 
-export function hyperbolic_ss_ll_frame(ss_value, ll_value, ll_delay, discount_factor, { elapsed = 0 } = {}) {
+export function hyperbolic_ss_ll_frame(
+  ss_value,
+  ll_value,
+  ll_delay,
+  discount_factor,
+  { elapsed = 0, ss_delay = null } = {}
+) {
   ss_value = Number(ss_value);
   ll_value = Number(ll_value);
   ll_delay = Math.trunc(ll_delay);
-  const ss_delay = ss_delay_from_ll(ll_delay);
+  const ss_delay_explicit = ss_delay != null && ss_delay !== "";
+  ss_delay = ss_delay_explicit
+    ? Math.max(0, Math.trunc(Number(ss_delay)))
+    : ss_delay_from_ll(ll_delay);
   const k = Number(discount_factor);
   const max_delay = Math.max(ss_delay, ll_delay);
   elapsed = Math.max(0, Math.min(Math.trunc(elapsed), max_delay));
@@ -1301,7 +1310,9 @@ export function hyperbolic_ss_ll_frame(ss_value, ll_value, ll_delay, discount_fa
       v_ll,
       preference,
       finished: elapsed >= max_delay,
-      ss_delay_rule: "0.75 * ll_delay (rounded)",
+      ss_delay_rule: ss_delay_explicit
+        ? "explicit"
+        : "0.75 * ll_delay (rounded)",
     },
   };
 }
@@ -1366,8 +1377,6 @@ export function sticky_curves(agent, environment, state, delay_max, delay_step, 
     for (const v of c.max_ss) if (v != null) focus_vals.push(v);
   }
 
-  // Default y zoom: center on nearby delays, but keep a tall enough window
-  // so the initial view is not a short band around the focus curves.
   let y_lo, y_hi;
   if (focus_vals.length) {
     const lo = Math.min(...focus_vals);

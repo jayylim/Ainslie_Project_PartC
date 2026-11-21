@@ -11,6 +11,16 @@ const DEFAULT_CONFIG = {
   max_steps: null,
   vision: "long",
 };
+
+/** Independent defaults for Hyperbolic Curves. */
+const HYPERBOLIC_DEFAULT_CONFIG = {
+  ...DEFAULT_CONFIG,
+  ss_value: 11,
+  ss_delay: 9,
+  ll_value: 20,
+  ll_delay: 12,
+};
+
 const DEFAULT_VISION = DEFAULT_CONFIG.vision;
 const DEFAULT_DELAY_MAX = 24;
 const DEFAULT_DELAY_STEP = 4;
@@ -21,13 +31,21 @@ const DEFAULT_PRIOR_BETA = 1;
 const DEFAULT_PRIOR_MEAN = 0.5;
 const DEFAULT_STICKY_STEP_SEED = "";
 
+const STEPPABLE_DEMOS = new Set(["hyperbolic_ss_ll", "sticky_step"]);
+
 let vision = DEFAULT_VISION;
 let learnStickiness = !!DEFAULT_LEARN_STICKINESS;
-let section = "steppable";
+let demo = "hyperbolic_ss_ll";
 let stickyClickBound = false;
 let configTimer = null;
 let stickyOptsTimer = null;
 let finished = false;
+
+/** Live parameter bags — hyperbolic is independent of the agent demos. */
+const configBags = {
+  hyperbolic: structuredClone(HYPERBOLIC_DEFAULT_CONFIG),
+  main: structuredClone(DEFAULT_CONFIG),
+};
 
 const metaEl = document.getElementById("meta");
 const metaGraphEl = document.getElementById("metaGraph");
@@ -35,6 +53,7 @@ const metaSailsEl = document.getElementById("metaSails");
 const singleViewEl = document.getElementById("singleView");
 const stickyStackEl = document.getElementById("stickyStack");
 const stickyStepOptsEl = document.getElementById("stickyStepOpts");
+const paramsPanelLabel = document.getElementById("paramsPanelLabel");
 const ssValueEl = document.getElementById("ssValue");
 const ssDelayEl = document.getElementById("ssDelay");
 const llValueEl = document.getElementById("llValue");
@@ -51,8 +70,6 @@ const stickyStepPriorAlphaEl = document.getElementById("stickyStepPriorAlpha");
 const stickyStepPriorBetaEl = document.getElementById("stickyStepPriorBeta");
 const stickyStepSeedEl = document.getElementById("stickyStepSeed");
 const stickyStepPriorMeanEl = document.getElementById("stickyStepPriorMean");
-const demoSelect = document.getElementById("demoSelect");
-const steppableDemoSelect = document.getElementById("steppableDemoSelect");
 const delayMaxEl = document.getElementById("delayMax");
 const delayStepEl = document.getElementById("delayStep");
 const stickinessEl = document.getElementById("stickiness");
@@ -63,51 +80,74 @@ const btnStepBack = document.getElementById("btnStepBack");
 const btnReset = document.getElementById("btnReset");
 const btnResetDefaults = document.getElementById("btnResetDefaults");
 const stepHint = document.getElementById("stepHint");
+const chromeSteppable = document.getElementById("chromeSteppable");
+const chromeSticky = document.getElementById("chromeSticky");
 
 function optionalToInput(value) {
   return value == null || value === "" ? "" : String(value);
 }
 
+function configBagKey(forDemo = demo) {
+  return forDemo === "hyperbolic_ss_ll" ? "hyperbolic" : "main";
+}
+
+function defaultsForDemo(forDemo = demo) {
+  return forDemo === "hyperbolic_ss_ll"
+    ? HYPERBOLIC_DEFAULT_CONFIG
+    : DEFAULT_CONFIG;
+}
+
+function applyConfigObjectToForm(cfg) {
+  ssValueEl.value = cfg.ss_value;
+  ssDelayEl.value = cfg.ss_delay;
+  llValueEl.value = cfg.ll_value;
+  llDelayEl.value = cfg.ll_delay;
+  lengthEl.value = optionalToInput(cfg.length);
+  horizonEl.value = optionalToInput(cfg.horizon);
+  discountFactorEl.value = cfg.discount_factor;
+  maxStepsEl.value = optionalToInput(cfg.max_steps);
+  vision = cfg.vision || DEFAULT_VISION;
+  syncVisionButtons();
+  clearConfigError();
+}
+
+function saveFormToConfigBag(forDemo = demo) {
+  Object.assign(configBags[configBagKey(forDemo)], currentConfig());
+}
+
 function applyDefaultsToForm() {
-  ssValueEl.value = DEFAULT_CONFIG.ss_value;
-  ssDelayEl.value = DEFAULT_CONFIG.ss_delay;
-  llValueEl.value = DEFAULT_CONFIG.ll_value;
-  llDelayEl.value = DEFAULT_CONFIG.ll_delay;
-  lengthEl.value = optionalToInput(DEFAULT_CONFIG.length);
-  horizonEl.value = optionalToInput(DEFAULT_CONFIG.horizon);
-  discountFactorEl.value = DEFAULT_CONFIG.discount_factor;
-  maxStepsEl.value = optionalToInput(DEFAULT_CONFIG.max_steps);
-  vision = DEFAULT_CONFIG.vision;
+  const defaults = defaultsForDemo();
+  Object.assign(configBags[configBagKey()], structuredClone(defaults));
+  applyConfigObjectToForm(defaults);
   learnStickiness = !!DEFAULT_LEARN_STICKINESS;
   stickyStepPriorAlphaEl.value = String(DEFAULT_PRIOR_ALPHA);
   stickyStepPriorBetaEl.value = String(DEFAULT_PRIOR_BETA);
   stickyStepSeedEl.value = optionalToInput(DEFAULT_STICKY_STEP_SEED);
   syncStickyPriorMeanLabel(DEFAULT_PRIOR_MEAN);
-  syncVisionButtons();
   syncLearnStickinessButtons();
-  clearConfigError();
 }
 
-function steppableDemo() {
-  return steppableDemoSelect.value || "visualizing_main";
-}
-
-function syncStepHint() {
-  const demo = steppableDemo();
+function syncChrome() {
+  const steppable = STEPPABLE_DEMOS.has(demo);
+  const sticky = demo === "sticky";
+  chromeSteppable.classList.toggle("hidden", !steppable);
+  chromeSticky.classList.toggle("hidden", !sticky);
   stickyStepOptsEl.classList.toggle("hidden", demo !== "sticky_step");
   btnStepBack.classList.toggle("hidden", demo !== "hyperbolic_ss_ll");
-  if (demo === "visualizing_main") {
+  if (demo === "sticky_step") {
     stepHint.textContent =
-      "Step advances one decision day in the environment";
-    } else if (demo === "sticky_step") {
-    stepHint.textContent =
-      "Step advances one decision day in the environment, decision outcome (stick/switch) is based on perceived stickiness";
+      "Step advances one decision day; outcome (stick/switch) uses perceived stickiness";
+  } else if (demo === "hyperbolic_ss_ll") {
+    stepHint.textContent = "Step moves the rewards one hour closer";
   } else {
-    stepHint.textContent =
-      "Step moves the reward one hour closer";
+    stepHint.textContent = "";
   }
+  paramsPanelLabel.textContent =
+    demo === "hyperbolic_ss_ll" ? "Hyperbolic parameters" : "Main parameters";
+  document.querySelectorAll(".param-agent").forEach((el) => {
+    el.classList.toggle("hidden", demo === "hyperbolic_ss_ll");
+  });
 }
-syncStepHint();
 
 function syncVisionButtons() {
   visionShort.classList.toggle("active", vision === "short");
@@ -163,25 +203,69 @@ function showConfigError(message, fields) {
 }
 
 function syncViewPanes() {
-  const sticky = section === "sticky";
+  const sticky = demo === "sticky";
   singleViewEl.classList.toggle("hidden", sticky);
   stickyStackEl.classList.toggle("hidden", !sticky);
 }
 
-function setSection(name) {
-  section = name;
+async function setDemo(name) {
+  if (name === demo) return;
+  saveFormToConfigBag(demo);
+  demo = name;
   document.querySelectorAll(".tabs button").forEach((b) => {
-    b.classList.toggle("active", b.dataset.section === name);
+    b.classList.toggle("active", b.dataset.demo === name);
   });
-  document.getElementById("chromeSteppable").classList.toggle("hidden", name !== "steppable");
-  document.getElementById("chromeNon").classList.toggle("hidden", name !== "nonsteppable");
-  document.getElementById("chromeSticky").classList.toggle("hidden", name !== "sticky");
+  applyConfigObjectToForm(configBags[configBagKey(name)]);
+  syncChrome();
   syncViewPanes();
-  refresh();
+  finished = false;
+  btnStep.disabled = false;
+  try {
+    await pushConfig();
+    if (demo === "sticky_step") {
+      await apiFetch("/api/steppable/sticky_options", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          learn_stickiness: learnStickiness,
+          prior_alpha: clampPositive(
+            stickyStepPriorAlphaEl.value,
+            DEFAULT_PRIOR_ALPHA
+          ),
+          prior_beta: clampPositive(
+            stickyStepPriorBetaEl.value,
+            DEFAULT_PRIOR_BETA
+          ),
+          seed: normalizeOptionalInt(stickyStepSeedEl.value),
+        }),
+      });
+      const res = await apiFetch("/api/steppable/reset", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ demo: "sticky_step" }),
+      });
+      if (!res.ok) throw new Error("HTTP " + res.status);
+      draw(await res.json());
+    } else if (demo === "hyperbolic_ss_ll") {
+      const res = await apiFetch("/api/steppable/reset", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ demo: "hyperbolic_ss_ll" }),
+      });
+      if (!res.ok) throw new Error("HTTP " + res.status);
+      draw(await res.json());
+    } else {
+      await refresh();
+    }
+  } catch (err) {
+    if (!err.configError) {
+      metaEl.textContent = "Failed to switch demo: " + err;
+    }
+  }
 }
 
 document.querySelectorAll(".tabs button").forEach((b) => {
-  b.addEventListener("click", () => setSection(b.dataset.section));
+  b.addEventListener("click", () => setDemo(b.dataset.demo));
 });
 
 visionShort.addEventListener("click", () => {
@@ -288,7 +372,7 @@ async function pushStickyOptions({ normalizeInputs = false } = {}) {
 }
 
 function scheduleStickyOptions() {
-  if (steppableDemo() !== "sticky_step" || section !== "steppable") return;
+  if (demo !== "sticky_step") return;
   clearTimeout(stickyOptsTimer);
   stickyOptsTimer = setTimeout(async () => {
     try {
@@ -343,6 +427,7 @@ async function pushConfig() {
     throw err;
   }
   clearConfigError();
+  saveFormToConfigBag();
   finished = false;
   btnStep.disabled = false;
 }
@@ -496,7 +581,7 @@ const UI_SCALE =
   ) || 0.8;
 
 function onStickyGraphClick(ev) {
-  if (section !== "sticky") return;
+  if (demo !== "sticky") return;
   const pt = ev.points && ev.points[0];
   if (!pt || pt.x == null || !Number.isFinite(Number(pt.x))) return;
   const data = pt.fullData || pt.data || {};
@@ -540,18 +625,15 @@ function drawInto(divId, payload) {
   if (typeof Plotly === "undefined") {
     throw new Error("Plotly failed to load (CDN blocked?). Refresh or check network.");
   }
+  let demoKey = demo;
+  if (demo === "sticky") {
+    demoKey =
+      divId === "chartSails"
+        ? "sticky-sails|" + stickinessEl.value
+        : "sticky-graph|" + delayMaxEl.value + "|" + delayStepEl.value;
+  }
   const uirevision =
-    divId +
-    "|" +
-    JSON.stringify(currentConfig()) +
-    "|" +
-    (section === "steppable"
-      ? steppableDemo()
-      : section === "sticky"
-        ? divId === "chartSails"
-          ? "sticky-sails|" + stickinessEl.value
-          : "sticky-graph|" + delayMaxEl.value + "|" + delayStepEl.value
-        : demoSelect.value || "");
+    divId + "|" + JSON.stringify(currentConfig()) + "|" + demoKey;
   const layout = baseLayout(payload, uirevision);
   const opts = plotOpts();
   const done = !plotReady[divId]
@@ -611,7 +693,7 @@ async function refreshStickySailsOnly() {
 
 async function refresh() {
   try {
-    if (section === "sticky") {
+    if (demo === "sticky") {
       const draft = parseStickinessDraft(stickinessEl.value);
       const s = draft != null ? draft : clampStickiness(stickinessEl.value);
       const [graph, sails] = await Promise.all([
@@ -627,14 +709,14 @@ async function refresh() {
       return;
     }
     let url;
-    if (section === "steppable") {
-      url = "/api/steppable/frame?demo=" + encodeURIComponent(steppableDemo());
+    if (STEPPABLE_DEMOS.has(demo)) {
+      url = "/api/steppable/frame?demo=" + encodeURIComponent(demo);
     } else {
-      url = "/api/demo/" + demoSelect.value;
+      url = "/api/demo/" + demo;
     }
     draw(await fetchJson(url));
   } catch (err) {
-    const el = section === "sticky" ? metaGraphEl : metaEl;
+    const el = demo === "sticky" ? metaGraphEl : metaEl;
     el.textContent = "Failed to load: " + err;
   }
 }
@@ -642,7 +724,26 @@ async function refresh() {
 async function applyConfigAndRefresh() {
   try {
     await pushConfig();
-    await refresh();
+    if (demo === "sticky_step") {
+      // Keep sticky_step session in sync with reward/agent params.
+      const res = await apiFetch("/api/steppable/reset", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ demo: "sticky_step" }),
+      });
+      if (!res.ok) throw new Error("HTTP " + res.status);
+      draw(await res.json());
+    } else if (demo === "hyperbolic_ss_ll") {
+      const res = await apiFetch("/api/steppable/reset", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ demo: "hyperbolic_ss_ll" }),
+      });
+      if (!res.ok) throw new Error("HTTP " + res.status);
+      draw(await res.json());
+    } else {
+      await refresh();
+    }
   } catch (err) {
     if (!err.configError) {
       metaEl.textContent = "Config failed: " + err;
@@ -661,54 +762,20 @@ function scheduleConfig() {
   el.addEventListener("input", scheduleConfig);
 });
 
-demoSelect.addEventListener("change", () => {
-  if (section === "nonsteppable") refresh();
-});
-
-steppableDemoSelect.addEventListener("change", async () => {
-  syncStepHint();
-  finished = false;
-  btnStep.disabled = false;
-  try {
-    if (steppableDemo() === "sticky_step") {
-      // Apply live learn / prior knobs, then reset the sticky run
-      await apiFetch("/api/steppable/sticky_options", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          learn_stickiness: learnStickiness,
-          prior_alpha: clampPositive(stickyStepPriorAlphaEl.value, DEFAULT_PRIOR_ALPHA),
-          prior_beta: clampPositive(stickyStepPriorBetaEl.value, DEFAULT_PRIOR_BETA),
-          seed: normalizeOptionalInt(stickyStepSeedEl.value),
-        }),
-      });
-    }
-    const res = await apiFetch("/api/steppable/reset", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ demo: steppableDemo() }),
-    });
-    if (!res.ok) throw new Error("HTTP " + res.status);
-    draw(await res.json());
-  } catch (err) {
-    metaEl.textContent = "Failed to switch demo: " + err;
-  }
-});
-
 function syncStickyLabels() {
   document.getElementById("delayMaxVal").textContent = delayMaxEl.value + "h";
   document.getElementById("delayStepVal").textContent = delayStepEl.value + "h";
 }
 delayMaxEl.addEventListener("input", () => {
   syncStickyLabels();
-  if (section === "sticky") {
+  if (demo === "sticky") {
     clearTimeout(configTimer);
     configTimer = setTimeout(refresh, 40);
   }
 });
 delayStepEl.addEventListener("input", () => {
   syncStickyLabels();
-  if (section === "sticky") {
+  if (demo === "sticky") {
     clearTimeout(configTimer);
     configTimer = setTimeout(refresh, 40);
   }
@@ -719,7 +786,7 @@ stickinessEl.addEventListener("input", () => {
     if (sailsStickinessEl) sailsStickinessEl.value = String(draft);
     syncSailsStickinessLabel(draft);
   }
-  if (section === "sticky") {
+  if (demo === "sticky") {
     clearTimeout(configTimer);
     configTimer = setTimeout(refreshStickySailsOnly, 40);
   }
@@ -727,12 +794,12 @@ stickinessEl.addEventListener("input", () => {
 stickinessEl.addEventListener("change", () => {
   // Normalize only on commit (blur/Enter), not while typing decimals.
   setStickiness(stickinessEl.value);
-  if (section === "sticky") refreshStickySailsOnly();
+  if (demo === "sticky") refreshStickySailsOnly();
 });
 if (sailsStickinessEl) {
   sailsStickinessEl.addEventListener("input", () => {
     setStickiness(sailsStickinessEl.value);
-    if (section === "sticky") {
+    if (demo === "sticky") {
       clearTimeout(configTimer);
       configTimer = setTimeout(refreshStickySailsOnly, 40);
     }
@@ -740,6 +807,8 @@ if (sailsStickinessEl) {
 }
 setStickiness(stickinessEl.value);
 syncStickyLabels();
+applyConfigObjectToForm(configBags.hyperbolic);
+syncChrome();
 syncViewPanes();
 
 btnReset.addEventListener("click", async () => {
@@ -748,7 +817,7 @@ btnReset.addEventListener("click", async () => {
     const res = await apiFetch("/api/steppable/reset", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ demo: steppableDemo() }),
+      body: JSON.stringify({ demo }),
     });
     if (!res.ok) throw new Error("HTTP " + res.status);
     draw(await res.json());
@@ -763,11 +832,21 @@ btnResetDefaults.addEventListener("click", async () => {
   clearTimeout(configTimer);
   clearTimeout(stickyOptsTimer);
   applyDefaultsToForm();
-  setStickiness(DEFAULT_STICKINESS);
+  if (demo !== "hyperbolic_ss_ll") {
+    setStickiness(DEFAULT_STICKINESS);
+  }
   try {
     await pushConfig();
-    if (steppableDemo() === "sticky_step") {
+    if (demo === "sticky_step") {
       await pushStickyOptions();
+    } else if (STEPPABLE_DEMOS.has(demo)) {
+      const res = await apiFetch("/api/steppable/reset", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ demo }),
+      });
+      if (!res.ok) throw new Error("HTTP " + res.status);
+      draw(await res.json());
     } else {
       await refresh();
     }
@@ -781,7 +860,7 @@ btnStep.addEventListener("click", async () => {
     const res = await apiFetch("/api/steppable/step", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ demo: steppableDemo() }),
+      body: JSON.stringify({ demo }),
     });
     if (!res.ok) throw new Error("HTTP " + res.status);
     draw(await res.json());
@@ -795,7 +874,7 @@ btnStepBack.addEventListener("click", async () => {
     const res = await apiFetch("/api/steppable/step_back", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ demo: steppableDemo() }),
+      body: JSON.stringify({ demo }),
     });
     if (!res.ok) throw new Error("HTTP " + res.status);
     draw(await res.json());
@@ -804,4 +883,17 @@ btnStepBack.addEventListener("click", async () => {
   }
 });
 
-refresh();
+(async function boot() {
+  try {
+    await pushConfig();
+    const res = await apiFetch("/api/steppable/reset", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ demo: "hyperbolic_ss_ll" }),
+    });
+    if (!res.ok) throw new Error("HTTP " + res.status);
+    draw(await res.json());
+  } catch (err) {
+    if (!err.configError) metaEl.textContent = "Failed to load: " + err;
+  }
+})();

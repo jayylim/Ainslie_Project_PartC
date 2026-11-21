@@ -254,24 +254,26 @@
     font-family: ui-sans-serif, system-ui, sans-serif;
     margin: 0 0 0.2rem;
   }
+  .params label.param-agent.hidden { display: none; }
+  .param-hint.hidden { display: none; }
 </style>
 </head>
 <body>
 <div class="wrap">
   <h1>Decision Agent demos</h1>
-  <p class="subtitle">Shared parameters · switch between steppable, static, and sticky views</p>
+  <p class="subtitle">Each tab is one demo · Hyperbolic Curves uses its own parameter set</p>
 
   <div class="panel">
     <div class="panel-label">
-      <span>Main parameters</span>
+      <span id="paramsPanelLabel">Hyperbolic parameters</span>
       <button type="button" class="secondary" id="btnResetDefaults">Reset to default</button>
     </div>
     <div class="params">
       <label>SS value
-        <input type="number" id="ssValue" value="3" min="0" step="0.5"/>
+        <input type="number" id="ssValue" value="11" min="0" step="0.5"/>
       </label>
       <label>SS delay (h)
-        <input type="number" id="ssDelay" value="0" min="0" step="1"/>
+        <input type="number" id="ssDelay" value="9" min="0" step="1"/>
       </label>
       <label>LL value
         <input type="number" id="llValue" value="20" min="0" step="0.5"/>
@@ -279,25 +281,25 @@
       <label>LL delay (h)
         <input type="number" id="llDelay" value="12" min="0" step="1"/>
       </label>
-      <label>Env length (h)
+      <label class="param-agent hidden">Env length (h)
         <input type="number" id="length" value="" min="1" step="24" placeholder="blank = none"/>
       </label>
-      <label>Agent horizon
+      <label class="param-agent hidden">Agent horizon
         <input type="number" id="horizon" value="10" min="1" step="1" placeholder="blank = none"/>
       </label>
       <label>Discount factor (k)
         <input type="number" id="discountFactor" value="0.6" min="0" step="0.05"/>
       </label>
-      <label>Max steps
+      <label class="param-agent hidden">Max steps
         <input type="number" id="maxSteps" value="" min="1" step="1" placeholder="blank = none"/>
       </label>
-      <label>Vision
+      <label class="param-agent hidden">Vision
         <div class="vision-toggle">
           <button type="button" id="visionShort" data-v="short">Short</button>
           <button type="button" id="visionLong" data-v="long">Long</button>
         </div>
       </label>
-      <p class="param-hint">
+      <p class="param-hint param-agent hidden" id="paramHintAgent">
         Clear Env length or Agent horizon for <em>none</em> (infinite env, or plan all remaining days) —
         at least one must be set. Max steps blank = no run cap (same as <code>main.max_steps = None</code>);
         with a finite env the timeline can still end first.
@@ -307,26 +309,18 @@
   </div>
 
   <div class="tabs">
-    <button type="button" data-section="steppable" class="active">Steppable</button>
-    <button type="button" data-section="nonsteppable">Non-steppable</button>
-    <button type="button" data-section="sticky">Sticky</button>
+    <button type="button" data-demo="hyperbolic_ss_ll" class="active">Hyperbolic Curves</button>
+    <button type="button" data-demo="visualise_sails">Simulating Decisions</button>
+    <button type="button" data-demo="sticky">Sticky Decisions</button>
+    <button type="button" data-demo="sticky_step">Learning about Stickiness</button>
   </div>
 
   <div class="panel">
     <div id="chromeSteppable" class="chrome">
-      <label style="flex-direction:row;align-items:center;gap:0.5rem;">
-        Demo
-        <select id="steppableDemoSelect">
-          <option value="visualizing_main">visualizing_main</option>
-          <option value="hyperbolic_curve">hyperbolic_curve</option>
-          <option value="hyperbolic_ss_ll">hyperbolic_ss_ll</option>
-          <option value="sticky_step">sticky_step</option>
-        </select>
-      </label>
       <button type="button" class="secondary" id="btnReset">Reset</button>
-      <button type="button" class="secondary hidden" id="btnStepBack">Step back</button>
+      <button type="button" class="secondary" id="btnStepBack">Step back</button>
       <button type="button" class="action" id="btnStep">Step</button>
-      <span id="stepHint">Step advances the selected demo</span>
+      <span id="stepHint">Step moves the rewards one hour closer</span>
       <div id="stickyStepOpts" class="hidden">
         <label>Learn stickiness
           <div class="vision-toggle">
@@ -347,15 +341,6 @@
           fixed s=α/(α+β)=0.500
         </span>
       </div>
-    </div>
-    <div id="chromeNon" class="chrome hidden">
-      <label style="flex-direction:row;align-items:center;gap:0.5rem;">
-        Demo
-        <select id="demoSelect">
-          <option value="visualise_sails">visualise_sails</option>
-          <option value="aggregate_sail">aggregate_sail</option>
-        </select>
-      </label>
     </div>
     <div id="chromeSticky" class="chrome hidden">
       <div class="range-pair">
@@ -384,6 +369,10 @@
       </div>
       <div>
         <p class="sticky-plot-label">Sticky sails at s</p>
+        <div class="range-pair" id="sailsStickinessPair" style="max-width:28rem;margin:0.35rem 0 0.5rem;">
+          <span>Stickiness s: <strong id="sailsStickinessVal">0.60</strong></span>
+          <input type="range" id="sailsStickiness" min="0" max="1" step="0.01" value="0.6"/>
+        </div>
         <div id="metaSails" class="meta-line"></div>
         <div id="chartSails" class="chart-box"></div>
       </div>

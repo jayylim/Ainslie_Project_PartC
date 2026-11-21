@@ -199,13 +199,17 @@ function currentHypFrame() {
   return frame;
 }
 
+function hypSsLlMaxDelay() {
+  return Math.max(Math.trunc(_config.ss_delay), Math.trunc(_config.ll_delay));
+}
+
 function currentHypSsLlFrame() {
   const frame = plot_series.hyperbolic_ss_ll_frame(
     _config.ss_value,
     _config.ll_value,
     _config.ll_delay,
     _config.discount_factor,
-    { elapsed: _hyp_ss_ll_session.elapsed }
+    { elapsed: _hyp_ss_ll_session.elapsed, ss_delay: _config.ss_delay }
   );
   frame.meta.finished = _hyp_ss_ll_session.finished;
   return frame;
@@ -309,7 +313,7 @@ export function apiSteppableStep(demo = "visualizing_main") {
 
   if (demo === "hyperbolic_ss_ll") {
     if (_hyp_ss_ll_session.finished) return jsonOk(currentHypSsLlFrame());
-    const delay = Math.trunc(_config.ll_delay);
+    const delay = hypSsLlMaxDelay();
     if (_hyp_ss_ll_session.elapsed >= delay) {
       _hyp_ss_ll_session.finished = true;
       return jsonOk(currentHypSsLlFrame());
