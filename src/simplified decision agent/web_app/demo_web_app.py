@@ -17,8 +17,6 @@ then open http://127.0.0.1:5050
 
 (Port 5050 avoids macOS AirPlay, which often claims :5000 and makes
 Firefox fail on http://localhost:5000 with 403.)
-
-For hosting, bind 0.0.0.0 and honour $PORT (see render.yaml).
 """
 
 import copy
@@ -1770,16 +1768,12 @@ if __name__ == "__main__":
     import webbrowser
 
     # Local default 5050: macOS AirPlay often binds :5000.
-    # Cloud hosts (Render, etc.) inject PORT and require 0.0.0.0.
     port = int(os.environ.get("PORT", "5050"))
-    host = os.environ.get("HOST") or (
-        "0.0.0.0" if "PORT" in os.environ else "127.0.0.1"
-    )
+    host = os.environ.get("HOST", "127.0.0.1")
     print(f"Serving unified visual demos on {host}:{port}")
-    if host in ("127.0.0.1", "localhost"):
-        print("Open http://127.0.0.1:%s (use 127.0.0.1, not localhost)." % port)
-        try:
-            webbrowser.open(f"http://127.0.0.1:{port}")
-        except Exception:
-            pass
+    print("Open http://127.0.0.1:%s (use 127.0.0.1, not localhost)." % port)
+    try:
+        webbrowser.open(f"http://127.0.0.1:{port}")
+    except Exception:
+        pass
     app.run(debug=False, host=host, port=port, use_reloader=False)

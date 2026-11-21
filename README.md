@@ -4,7 +4,7 @@ Hyperbolic discounter on a memoryless SS/LL timeline (Ainslie-style bundling). E
 
 ## Live demo
 
-Interactive demos (no install): **[https://ainslie-project-partc.onrender.com](https://ainslie-project-partc.onrender.com)**
+Interactive demos (no install): **[https://jayylim.github.io/Ainslie_Project_PartC/](https://jayylim.github.io/Ainslie_Project_PartC/)**
 
 
 #### Shared parameters (apply to every tab): 
@@ -132,9 +132,14 @@ Each demo is an independent visualisation to demonstrate different layers/variat
 
 ## Web App Setup
 
-Interactive browser UI over the demos above. Same venv and deps as [Quick start](#quick-start) (`flask` / `gunicorn` are in `requirements.txt`).
+### Hosted (GitHub Pages)
 
-### For Local
+**[https://jayylim.github.io/Ainslie_Project_PartC/](https://jayylim.github.io/Ainslie_Project_PartC/)**. 
+Source lives in `src/simplified decision agent/web_app_js/`
+
+### Local (Flask)
+
+Interactive browser UI over the demos above. Same venv and deps as [Quick start](#quick-start) (`flask` is in `requirements.txt`).
 
 From the **repo root**:
 
@@ -152,17 +157,6 @@ python -m web_app.demo_web_app
 ```
 
 Open **[http://127.0.0.1:5050](http://127.0.0.1:5050)** in Firefox, Chrome, or Safari (use `127.0.0.1`, not `localhost` — on macOS, `localhost:5000` is often AirPlay and returns 403). Stop the server with `Ctrl+C`.
-
-### For Web Hosted (Render)
-
-This repo includes a `render.yaml` Blueprint. On [Render](https://render.com): **New → Blueprint** (or **Web Service**), connect this GitHub repo, and deploy. Free tier sleeps when idle; the first visit after sleep can take ~30–60s.
-
-Manual Web Service settings if you skip the Blueprint:
-
-- **Build command:** `pip install -r requirements.txt`
-- **Start command:** `gunicorn -b 0.0.0.0:$PORT --chdir "src/simplified decision agent" web_app.demo_web_app:app`
-
-Public URL: [https://ainslie-project-partc.onrender.com](https://ainslie-project-partc.onrender.com) (also linked at the top of this README).
 
 
 ## Coding Notes
