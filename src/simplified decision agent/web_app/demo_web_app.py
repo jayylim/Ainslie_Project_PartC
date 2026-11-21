@@ -1114,15 +1114,15 @@ function syncStepHint() {
   const demo = steppableDemo();
   stickyStepOptsEl.classList.toggle("hidden", demo !== "sticky_step");
   btnStepBack.classList.toggle("hidden", demo !== "hyperbolic_ss_ll");
-  if (demo === "hyperbolic_curve") {
+  if (demo === "visualizing_main") {
     stepHint.textContent =
-      "hyperbolic_curve — Step moves the reward one hour closer to day 0 (axes stay fixed)";
+      "Step advances one decision day in the environment";
     } else if (demo === "sticky_step") {
     stepHint.textContent =
-      "sticky_step — Step rolls stick/switch from perceived s; Learn On tracks Beta mean, Off uses prior mean α/(α+β)";
+      "Step advances one decision day in the environment, decision outcome (stick/switch) is based on perceived stickiness";
   } else {
     stepHint.textContent =
-      "visualizing_main — Step advances one decision day in the environment";
+      "Step moves the reward one hour closer";
   }
 }
 syncStepHint();

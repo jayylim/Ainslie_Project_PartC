@@ -42,6 +42,30 @@ def fade(base_hex, i, n, max_fade=0.72):
 # Aggregates sit further left than per-outcome discounted values.
 LABEL_DISCOUNT_OFFSET = 2
 LABEL_AGG_OFFSET = 5
+# Dense samples for display-only hyperbolic sails (tips / maths stay exact).
+SAIL_SAMPLE_POINTS = 200
+
+
+def _dense_sail_xy(agent, reward, delay, *, n_points=SAIL_SAMPLE_POINTS):
+    """Smooth sail from t=0 to delivery using agent.value_function."""
+    delay = float(delay)
+    if delay <= 0:
+        return [0.0], [float(agent.value_function(reward, 0))]
+    n = max(int(n_points), 2)
+    xs = [delay * i / (n - 1) for i in range(n)]
+    ys = [float(agent.value_function(reward, delay - t)) for t in xs]
+    return xs, ys
+
+
+def _dense_hyperbolic_xy(reward, remaining, k, *, n_points=SAIL_SAMPLE_POINTS):
+    """Smooth sail V = reward / (1 + k * distance); no agent object needed."""
+    remaining = float(remaining)
+    if remaining <= 0:
+        return [0.0], [float(reward)]
+    n = max(int(n_points), 2)
+    xs = [remaining * i / (n - 1) for i in range(n)]
+    ys = [float(reward / (1.0 + k * (remaining - t))) for t in xs]
+    return xs, ys
 
 
 def _choice_title(prefix, action):
@@ -131,8 +155,15 @@ def sticky_outcome_events(agent, environment, state):
 # Sail & aggregate-bar-graph drawing helpers (markers, value labels, shapes)
 # ---------------------------------------------------------------------------
 
-def _value_label(x, y, text, *, color, position="middle left", size=12):
+def _value_label(x, y, text, *, color, position="middle left", size=12, bold=False):
     """Numeral only (no marker). Labels stay fully opaque; sails may be faded."""
+    font = {"color": color, "size": size}
+    if bold:
+        font = {
+            "color": color,
+            "size": max(size + 2, 15),
+            "family": "Arial Black, Helvetica Neue, sans-serif",
+        }
     return {
         "type": "scatter",
         "mode": "text",
@@ -140,23 +171,32 @@ def _value_label(x, y, text, *, color, position="middle left", size=12):
         "y": [y],
         "text": [text],
         "textposition": position,
-        "textfont": {"color": color, "size": size},
+        "textfont": font,
         "showlegend": False,
         "hoverinfo": "skip",
     }
 
 # visual characteristics of LL sails and tips
 def _ll_sail_trace(
-    agent, delay, reward, decision_t, *, sail_color, label=None, show_legend=True
+    agent,
+    delay,
+    reward,
+    decision_t,
+    *,
+    sail_color,
+    label=None,
+    show_legend=True,
+    bold_decision=False,
 ):
     """One LL hyperbolic sail + tip / decision-node markers.
 
     Sail/marker colour may be horizon-faded; numerals stay opaque resist.
+    ``bold_decision`` emphasises the value at the current choice node (used for
+    short-vision preference when aggregates are hidden).
     """
     label_color = COLORS["resist"]
-    xs = list(range(0, delay + 1))
-    ys = [agent.value_function(reward, delay - t) for t in xs]
-    tip = ys[-1] if ys else 0
+    xs, ys = _dense_sail_xy(agent, reward, delay)
+    tip = agent.value_function(reward, 0)
     decision_val = agent.value_function(reward, delay - decision_t)
     # Discounted value at decision node — just left of marker
     decision_label_x = decision_t - LABEL_DISCOUNT_OFFSET
@@ -189,7 +229,15 @@ def _ll_sail_trace(
             "mode": "markers",
             "x": [decision_t],
             "y": [decision_val],
-            "marker": {"size": 8, "color": sail_color},
+            "marker": {
+                "size": 11 if bold_decision else 8,
+                "color": sail_color,
+                "line": (
+                    {"color": sail_color, "width": 2}
+                    if bold_decision
+                    else {"width": 0}
+                ),
+            },
             "showlegend": False,
             "hoverinfo": "skip",
         },
@@ -199,6 +247,7 @@ def _ll_sail_trace(
             f"{decision_val:.2f}",
             color=label_color,
             position="middle left",
+            bold=bold_decision,
         ),
     ]
     shapes = [
@@ -227,10 +276,12 @@ def _ll_sail_trace(
     return traces, shapes, y_max
 
 # visual characteristics of SS sails and tips
-def _ss_sail_traces(agent, ss_events):
+def _ss_sail_traces(agent, ss_events, *, bold_first=False):
     """SS at the current decision is a tip scatter; later SS get sails back to t=0.
 
     Sail colour fades with foresight index; numerals stay opaque dessert.
+    ``bold_first`` emphasises the current-decision SS tip (short-vision preference
+    when aggregates are hidden).
     """
     base = COLORS["dessert_sail"]
     label_color = COLORS["dessert"]
@@ -239,6 +290,7 @@ def _ss_sail_traces(agent, ss_events):
     n = len(ss_events)
     for i, (delay, reward) in enumerate(ss_events):
         sail_color = fade(base, i, n)
+        emphasize = bold_first and i == 0
         # Labels sit left of the tip so they stay clear of crossing sails
         tip_label_x = delay - LABEL_DISCOUNT_OFFSET
         if delay == 0:
@@ -250,7 +302,15 @@ def _ss_sail_traces(agent, ss_events):
                     "mode": "markers",
                     "x": [delay],
                     "y": [tip],
-                    "marker": {"size": 10, "color": sail_color},
+                    "marker": {
+                        "size": 13 if emphasize else 10,
+                        "color": sail_color,
+                        "line": (
+                            {"color": sail_color, "width": 2}
+                            if emphasize
+                            else {"width": 0}
+                        ),
+                    },
                     "name": "dessert",
                     "showlegend": i == 0,
                     "hovertemplate": "SS @ %{x}h<br>V=%{y:.3f}<extra></extra>",
@@ -263,14 +323,14 @@ def _ss_sail_traces(agent, ss_events):
                     f"{tip:.2f}",
                     color=label_color,
                     position="middle left",
+                    bold=emphasize,
                 )
             )
             continue
 
-        xs = list(range(0, delay + 1))
-        ys = [agent.value_function(reward, delay - t) for t in xs]
-        tip = ys[-1] if ys else 0
-        y_max = max(y_max, max(ys) if ys else 0)
+        xs, ys = _dense_sail_xy(agent, reward, delay)
+        tip = agent.value_function(reward, 0)
+        y_max = max(y_max, max(ys) if ys else 0, tip)
         traces.append(
             {
                 "type": "scatter",
@@ -289,7 +349,15 @@ def _ss_sail_traces(agent, ss_events):
                 "mode": "markers",
                 "x": [delay],
                 "y": [tip],
-                "marker": {"size": 10, "color": sail_color},
+                "marker": {
+                    "size": 13 if emphasize else 10,
+                    "color": sail_color,
+                    "line": (
+                        {"color": sail_color, "width": 2}
+                        if emphasize
+                        else {"width": 0}
+                    ),
+                },
                 "showlegend": False,
                 "hoverinfo": "skip",
             }
@@ -301,6 +369,7 @@ def _ss_sail_traces(agent, ss_events):
                 f"{tip:.2f}",
                 color=label_color,
                 position="middle left",
+                bold=emphasize,
             )
         )
     return traces, y_max
@@ -328,28 +397,27 @@ def _aggregate_traces(action_values, chosen):
             "hovertemplate": f"{name} agg=%{{y:.3f}}<extra></extra>",
         }
 
-    def agg_label(y, color, is_chosen):
-        lab = _value_label(
-            label_x,
-            y + 0.5,
-            f"{y:.2f}",
-            color=color,
-            position="middle left",
-            size=13,
-        )
-        if is_chosen:
-            lab["textfont"] = {
-                "color": color,
-                "size": 15,
-                "family": "Arial Black, Helvetica Neue, sans-serif",
-            }
-        return lab
-
     traces = [
         agg_marker("dessert", dessert_agg, COLORS["dessert"]),
-        agg_label(dessert_agg, COLORS["dessert"], chosen == "dessert"),
+        _value_label(
+            label_x,
+            dessert_agg + 0.5,
+            f"{dessert_agg:.2f}",
+            color=COLORS["dessert"],
+            position="middle left",
+            size=13,
+            bold=(chosen == "dessert"),
+        ),
         agg_marker("resist", resist_agg, COLORS["resist"]),
-        agg_label(resist_agg, COLORS["resist"], chosen == "resist"),
+        _value_label(
+            label_x,
+            resist_agg + 0.5,
+            f"{resist_agg:.2f}",
+            color=COLORS["resist"],
+            position="middle left",
+            size=13,
+            bold=(chosen == "resist"),
+        ),
     ]
     return traces, max(dessert_agg, resist_agg)
 
@@ -577,8 +645,12 @@ def _sails_dual_panel(
     """Shared dual-panel layout: aggregate stack (left) + sails (right).
 
     Used by sails_frame and sticky_sails_frame.
+
+    Short vision: skip t=0 aggregate scatters/labels (they duplicate the single
+    tip values) and bold the preferred option's tip / decision numeral instead.
     """
     n = len(ll_events)
+    short_vision = getattr(agent, "vision", "long") == "short"
     stack_traces, stack_annotations, stack_ymax = _aggregate_stack_panel(
         dessert_parts, resist_parts, action_values, action
     )
@@ -598,18 +670,24 @@ def _sails_dual_panel(
             sail_color=fade(COLORS["resist_sail"], i, n_sails),
             label="resist" if i == 0 else None,
             show_legend=(i == 0),
+            bold_decision=short_vision and action == "resist" and i == 0,
         )
         sail_traces.extend(traces_i)
         shapes.extend(shapes_i)
         y_max = max(y_max, peak)
 
-    ss_traces, ss_ymax = _ss_sail_traces(agent, ss_events)
+    ss_traces, ss_ymax = _ss_sail_traces(
+        agent,
+        ss_events,
+        bold_first=short_vision and action == "dessert",
+    )
     sail_traces.extend(ss_traces)
     y_max = max(y_max, ss_ymax)
 
-    agg_traces, agg_ymax = _aggregate_traces(action_values, action)
-    sail_traces.extend(agg_traces)
-    y_max = max(y_max, agg_ymax)
+    if not short_vision:
+        agg_traces, agg_ymax = _aggregate_traces(action_values, action)
+        sail_traces.extend(agg_traces)
+        y_max = max(y_max, agg_ymax)
 
     _assign_axes(sail_traces, xaxis="x2", yaxis="y2")
     shapes = _shapes_on_subplot(shapes, xref="x2", yref="y2")
@@ -618,8 +696,9 @@ def _sails_dual_panel(
         max((d for d, _ in ll_events), default=1),
         max((d for d, _ in ss_events), default=1),
     )
-    # Extra left room for aggregate labels (furthest left numerals)
-    pad_x = max(LABEL_AGG_OFFSET + 6, x_max * 0.12)
+    # Extra left room for aggregate labels when shown; short vision only needs tip pads
+    label_pad = LABEL_DISCOUNT_OFFSET + 4 if short_vision else LABEL_AGG_OFFSET + 6
+    pad_x = max(label_pad, x_max * 0.12)
     xticks, xticklabels = _hour_xticks(x_max)
 
     title = _choice_title(title_prefix, action)
@@ -1013,7 +1092,7 @@ def aggregate_frame(agent, environment, state):
     action, action_values = agent.choose_action(state, environment)
     ss_events = agent.choice_horizon(state, "dessert", environment)
     ll_events = agent.choice_horizon(state, "resist", environment)
-    ll_delay = environment.rewards["LL"]["delay"]
+    ll_delay = float(environment.rewards["LL"]["delay"])
 
     def bundle_value_at(events, at_time):
         return sum(
@@ -1022,12 +1101,16 @@ def aggregate_frame(agent, environment, state):
             if delay >= at_time
         )
 
-    xs = list(range(ll_delay + 1))
-    ys = [bundle_value_at(ll_events, t) for t in xs]
+    if ll_delay <= 0:
+        xs, ys = [0.0], [float(bundle_value_at(ll_events, 0))]
+    else:
+        n = SAIL_SAMPLE_POINTS
+        xs = [ll_delay * i / (n - 1) for i in range(n)]
+        ys = [float(bundle_value_at(ll_events, t)) for t in xs]
     ss_value = bundle_value_at(ss_events, 0)
-    perceived_ll = ys[0] if ys else 0
-    ll_tip = ys[-1] if ys else 0
-    y_max = max(max(ys) if ys else 0, ss_value)
+    perceived_ll = bundle_value_at(ll_events, 0)
+    ll_tip = bundle_value_at(ll_events, ll_delay)
+    y_max = max(max(ys) if ys else 0, ss_value, perceived_ll, ll_tip)
 
     resist_chosen = action == "resist"
     dessert_chosen = action == "dessert"
@@ -1173,7 +1256,8 @@ def hyperbolic_frame(reward, initial_delay, discount_factor, *, elapsed=0):
     Perceived values use HypAgent maths: V = reward / (1 + k * distance).
 
     Axis ranges stay locked to the initial delay and reward so the plot does
-    not rescale as the sail shortens.
+    not rescale as the sail shortens. Sail traces are densely sampled for a
+    smooth curve; stepping still advances ``elapsed`` by whole hours.
     """
     initial_delay = int(initial_delay)
     elapsed = max(0, min(int(elapsed), initial_delay))
@@ -1183,8 +1267,7 @@ def hyperbolic_frame(reward, initial_delay, discount_factor, *, elapsed=0):
     def V(distance):
         return reward / (1.0 + k * distance)
 
-    xs = list(range(remaining + 1))
-    ys = [V(remaining - t) for t in xs]
+    xs, ys = _dense_hyperbolic_xy(reward, remaining, k)
     perceived = V(remaining)
 
     # Fixed scales for the whole approach (match hyperbolic_curve.py)
@@ -1318,13 +1401,16 @@ def hyperbolic_ss_ll_frame(
     else:
         preference = "none"
 
-    def sail(reward, remaining):
-        xs = list(range(int(remaining) + 1))
-        ys = [V(reward, remaining - t) for t in xs]
-        return xs, ys
-
-    xs_ss, ys_ss = sail(ss_value, rem_ss) if ss_available else ([0], [ss_value])
-    xs_ll, ys_ll = sail(ll_value, rem_ll) if ll_available else ([0], [ll_value])
+    xs_ss, ys_ss = (
+        _dense_hyperbolic_xy(ss_value, rem_ss, k)
+        if ss_available
+        else ([0.0], [ss_value])
+    )
+    xs_ll, ys_ll = (
+        _dense_hyperbolic_xy(ll_value, rem_ll, k)
+        if ll_available
+        else ([0.0], [ll_value])
+    )
 
     x_hi = max(max_delay, 1)
     y_hi = max(ss_value, ll_value) + 1.0

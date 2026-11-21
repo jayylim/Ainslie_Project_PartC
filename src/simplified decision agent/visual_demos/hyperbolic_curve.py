@@ -9,6 +9,7 @@ Run from the package root:
 
 import matplotlib.pyplot as plt
 import matplotlib
+import numpy as np
 
 try:
     matplotlib.use("MacOSX")
@@ -21,10 +22,11 @@ LL = {
 }
 
 discount = 0.8
+N_SAMPLES = 200
 
 fig, axes = plt.subplots()
 
-x_max = LL["delay"]*1.1
+x_max = LL["delay"] * 1.1
 y_max = LL["value"] + 1
 
 for current_delay in range(LL["delay"] + 1):
@@ -37,21 +39,16 @@ for current_delay in range(LL["delay"] + 1):
     axes.set_ylabel("Perceived value")
     axes.set_title(f"Choice at time step = {current_delay}")
 
-    values = []
-    time_step = []
-
-    perceived_value = LL["value"] / (1 + discount * remaining_delay)
-
-    for t in range(remaining_delay + 1):
-        distance = remaining_delay - t
-        value = LL["value"] / (1 + discount * distance)
-        time_step.append(t)
-        values.append(value)
+    if remaining_delay <= 0:
+        time_step = np.array([0.0])
+        values = np.array([float(LL["value"])])
+    else:
+        time_step = np.linspace(0.0, remaining_delay, N_SAMPLES)
+        distance = remaining_delay - time_step
+        values = LL["value"] / (1.0 + discount * distance)
 
     axes.plot(time_step, values)
     axes.axvline(remaining_delay, linestyle="--")
-    #axes.scatter(0, perceived_value, s=50, color="black")
-    #axes.text(0, perceived_value + 0.5, round(perceived_value, 2), ha="center", size=14)
 
     plt.pause(0.05)
     plt.waitforbuttonpress()
