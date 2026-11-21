@@ -547,8 +547,9 @@ async function fetchJson(url) {
 
 async function refreshStickySailsOnly() {
   try {
-    const s = clampStickiness(stickinessEl.value);
-    setStickiness(s);
+    // Do not rewrite the input here — "0." / incomplete drafts must stay editable.
+    const s = parseStickinessDraft(stickinessEl.value);
+    if (s == null) return;
     const sails = await fetchJson(
       "/api/demo/visualise_sticky_sails?stickiness=" + encodeURIComponent(s)
     );
@@ -562,8 +563,8 @@ async function refreshStickySailsOnly() {
 async function refresh() {
   try {
     if (section === "sticky") {
-      const s = clampStickiness(stickinessEl.value);
-      setStickiness(s);
+      const draft = parseStickinessDraft(stickinessEl.value);
+      const s = draft != null ? draft : clampStickiness(stickinessEl.value);
       const [graph, sails] = await Promise.all([
         fetchJson(
           `/api/sticky?delay_max=${delayMaxEl.value}` +
@@ -670,6 +671,7 @@ stickinessEl.addEventListener("input", () => {
   }
 });
 stickinessEl.addEventListener("change", () => {
+  // Normalize only on commit (blur/Enter), not while typing decimals.
   setStickiness(stickinessEl.value);
   if (section === "sticky") refreshStickySailsOnly();
 });
