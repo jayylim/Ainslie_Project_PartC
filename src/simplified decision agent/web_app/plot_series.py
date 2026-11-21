@@ -1710,11 +1710,18 @@ def sticky_curves(agent, environment, state, delay_max, delay_step, reward_LL=No
         for v in c["max_ss"]
         if v is not None
     ]
+    # Default y zoom: center on nearby delays, but keep a tall enough window
+    # so the initial view is not a short band around the focus curves.
     if focus_vals:
         lo, hi = min(focus_vals), max(focus_vals)
-        pad = max((hi - lo) * 0.1, 0.35)
+        pad = max((hi - lo) * 0.45, 1.5)
         y_lo = max(0.0, lo - pad)
         y_hi = hi + pad
+        min_span = max(ymax * 0.55, 4.0)
+        if y_hi - y_lo < min_span:
+            mid = 0.5 * (y_lo + y_hi)
+            y_lo = max(0.0, mid - 0.5 * min_span)
+            y_hi = y_lo + min_span
         if y_hi <= y_lo:
             y_hi = y_lo + 1.0
     else:
