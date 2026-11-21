@@ -609,8 +609,9 @@ function _sails_dual_panel(
       },
       yaxis: {
         title: "Perceived value of reward",
-        domain: [0.0, 0.88],
-        range: [0, stack_ymax * 1.18],
+        domain: [0.0, 0.92],
+        // Extra headroom so Σ labels / callouts are not clipped when UI is scaled.
+        range: [0, stack_ymax * 1.4],
         gridcolor: "rgba(0,0,0,0.12)",
       },
       xaxis2: {
@@ -623,8 +624,8 @@ function _sails_dual_panel(
       },
       yaxis2: {
         title: "Perceived value",
-        domain: [0.0, 0.88],
-        range: [0, y_max ? y_max * 1.25 : 1],
+        domain: [0.0, 0.92],
+        range: [0, y_max ? y_max * 1.35 : 1],
         anchor: "x2",
         overlaying: false,
         side: "left",
@@ -637,8 +638,8 @@ function _sails_dual_panel(
         x: sails_domain[0],
         xref: "paper",
       },
-      margin: { l: 60, r: 24, t: 72, b: 90 },
-      height: 700,
+      margin: { l: 60, r: 24, t: 80, b: 90 },
+      height: 880,
     },
     meta,
   };
