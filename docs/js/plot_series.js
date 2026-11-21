@@ -1400,6 +1400,8 @@ export function sticky_curves(agent, environment, state, delay_max, delay_step, 
         "s=%{x:.2f}<br>max SS=%{y:.3f}" +
         (is_current ? "<br><i>Click → set sticky sails s</i>" : "") +
         "<extra></extra>",
+      // customdata survives Plotly click events more reliably than meta alone
+      customdata: xs.map(() => (is_current ? "current" : "other")),
       meta: { is_current },
     });
   }

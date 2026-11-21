@@ -489,7 +489,16 @@ function onStickyGraphClick(ev) {
   if (section !== "sticky") return;
   const pt = ev.points && ev.points[0];
   if (!pt || pt.x == null || !Number.isFinite(Number(pt.x))) return;
-  // Any curve: x is stickiness s on the shared axis (same as clicking the black curve).
+  const data = pt.fullData || pt.data || {};
+  const meta = data.meta;
+  const cd = pt.customdata;
+  const isCurrent =
+    cd === "current" ||
+    (Array.isArray(cd) && cd[0] === "current") ||
+    (meta && (meta.is_current === true || meta.is_current === 1)) ||
+    String(data.name || "").includes("(current)") ||
+    String((data.line && data.line.color) || "").toLowerCase() === "#000000";
+  if (!isCurrent) return;
   setStickiness(pt.x);
   refreshStickySailsOnly();
 }
