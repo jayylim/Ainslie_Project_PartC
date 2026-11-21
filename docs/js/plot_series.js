@@ -1366,13 +1366,21 @@ export function sticky_curves(agent, environment, state, delay_max, delay_step, 
     for (const v of c.max_ss) if (v != null) focus_vals.push(v);
   }
 
+  // Default y zoom: center on nearby delays, but keep a tall enough window
+  // so the initial view is not a short band around the focus curves.
   let y_lo, y_hi;
   if (focus_vals.length) {
     const lo = Math.min(...focus_vals);
     const hi = Math.max(...focus_vals);
-    const pad = Math.max((hi - lo) * 0.1, 0.35);
+    const pad = Math.max((hi - lo) * 0.45, 1.5);
     y_lo = Math.max(0.0, lo - pad);
     y_hi = hi + pad;
+    const min_span = Math.max(ymax * 0.55, 4.0);
+    if (y_hi - y_lo < min_span) {
+      const mid = 0.5 * (y_lo + y_hi);
+      y_lo = Math.max(0.0, mid - 0.5 * min_span);
+      y_hi = y_lo + min_span;
+    }
     if (y_hi <= y_lo) y_hi = y_lo + 1.0;
   } else {
     y_lo = 0.0;
@@ -1416,7 +1424,7 @@ export function sticky_curves(agent, environment, state, delay_max, delay_step, 
       yaxis: { title: "Max SS resisted", range: [y_lo, y_hi], autorange: false },
       legend: { orientation: "h", y: -0.22 },
       margin: { l: 60, r: 20, t: 50, b: 80 },
-      height: 420,
+      height: 620,
       hovermode: "closest",
     },
     meta: {
