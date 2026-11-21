@@ -22,24 +22,20 @@
     --error-border: #fecdca;
   }
   * { box-sizing: border-box; }
+  /*
+   * ~80% UI scale via root font-size (not CSS zoom/transform).
+   * CSS zoom breaks Plotly click hit-testing (sticky graph → set s).
+   * Chart pixel heights are scaled in app.js baseLayout.
+   */
+  html {
+    font-size: calc(100% * var(--ui-scale));
+  }
   body {
     margin: 0;
     font-family: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
     background: linear-gradient(165deg, #eef2f6 0%, #f7f5f1 45%, #e9eef3 100%);
     color: var(--ink);
     min-height: 100vh;
-  }
-  /* ~80% browser-zoom feel for UI + Plotly charts */
-  html {
-    zoom: var(--ui-scale);
-  }
-  @supports not (zoom: 1) {
-    body {
-      transform: scale(var(--ui-scale));
-      transform-origin: top center;
-      width: calc(100% / var(--ui-scale));
-      margin-left: calc((100% - (100% / var(--ui-scale))) / 2);
-    }
   }
   .wrap {
     max-width: min(1680px, 90vw);

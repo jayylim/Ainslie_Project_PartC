@@ -369,7 +369,10 @@ function plotOpts() {
 function baseLayout(payload, uirevision) {
   const layout = Object.assign(
     {
-      font: { family: "Iowan Old Style, Palatino Linotype, Georgia, serif", size: 13 },
+      font: {
+        family: "Iowan Old Style, Palatino Linotype, Georgia, serif",
+        size: Math.round(13 * UI_SCALE),
+      },
       paper_bgcolor: "#fff",
       plot_bgcolor: "#fafbfc",
     },
@@ -377,6 +380,10 @@ function baseLayout(payload, uirevision) {
   );
   if (!layout.uirevision) {
     layout.uirevision = uirevision;
+  }
+  // Match ~80% UI scale without CSS zoom (keeps Plotly clicks working).
+  if (typeof layout.height === "number") {
+    layout.height = Math.round(layout.height * UI_SCALE);
   }
   return layout;
 }
@@ -473,20 +480,36 @@ function fillMeta(el, payload) {
   }
 }
 
+const UI_SCALE =
+  Number.parseFloat(
+    getComputedStyle(document.documentElement).getPropertyValue("--ui-scale")
+  ) || 0.8;
+
+function onStickyGraphClick(ev) {
+  if (section !== "sticky") return;
+  const pt = ev.points && ev.points[0];
+  if (!pt) return;
+  const meta = pt.data && pt.data.meta;
+  const isCurrent =
+    (meta && (meta.is_current === true || meta.is_current === 1)) ||
+    String((pt.data && pt.data.name) || "").includes("(current)");
+  if (!isCurrent) return;
+  setStickiness(pt.x);
+  refreshStickySailsOnly();
+}
+
 function ensureStickyClickHandler() {
-  if (stickyClickBound) return;
   const chart = document.getElementById("chartGraph");
-  chart.on("plotly_click", (ev) => {
-    if (section !== "sticky") return;
-    const pt = ev.points && ev.points[0];
-    if (!pt) return;
-    const isCurrent =
-      (pt.data && pt.data.meta && pt.data.meta.is_current) ||
-      String((pt.data && pt.data.name) || "").includes("(current)");
-    if (!isCurrent) return;
-    setStickiness(pt.x);
-    refreshStickySailsOnly();
-  });
+  if (!chart || typeof chart.on !== "function") return;
+  // Re-bind after every plot: newPlot can drop listeners.
+  if (stickyClickBound && typeof chart.removeListener === "function") {
+    try {
+      chart.removeListener("plotly_click", onStickyGraphClick);
+    } catch (_err) {
+      /* ignore */
+    }
+  }
+  chart.on("plotly_click", onStickyGraphClick);
   stickyClickBound = true;
 }
 
@@ -510,12 +533,11 @@ function drawInto(divId, payload) {
         : demoSelect.value || "");
   const layout = baseLayout(payload, uirevision);
   const opts = plotOpts();
-  if (!plotReady[divId]) {
-    Plotly.newPlot(divId, payload.traces, layout, opts);
-    plotReady[divId] = true;
-  } else {
-    Plotly.react(divId, payload.traces, layout, opts);
-  }
+  const done = !plotReady[divId]
+    ? Plotly.newPlot(divId, payload.traces, layout, opts)
+    : Plotly.react(divId, payload.traces, layout, opts);
+  plotReady[divId] = true;
+  return done;
 }
 
 function draw(payload) {
@@ -529,11 +551,18 @@ function draw(payload) {
 
 function drawStickyPair(graphPayload, sailsPayload) {
   try {
-    drawInto("chartGraph", graphPayload);
-    drawInto("chartSails", sailsPayload);
-    ensureStickyClickHandler();
-    fillMeta(metaGraphEl, graphPayload);
-    fillMeta(metaSailsEl, sailsPayload);
+    Promise.all([
+      drawInto("chartGraph", graphPayload),
+      drawInto("chartSails", sailsPayload),
+    ])
+      .then(() => {
+        ensureStickyClickHandler();
+        fillMeta(metaGraphEl, graphPayload);
+        fillMeta(metaSailsEl, sailsPayload);
+      })
+      .catch((err) => {
+        metaGraphEl.textContent = String(err.message || err);
+      });
   } catch (err) {
     metaGraphEl.textContent = String(err.message || err);
   }
@@ -547,7 +576,6 @@ async function fetchJson(url) {
 
 async function refreshStickySailsOnly() {
   try {
-    // Do not rewrite the input here — "0." / incomplete drafts must stay editable.
     const s = parseStickinessDraft(stickinessEl.value);
     if (s == null) return;
     const sails = await fetchJson(
