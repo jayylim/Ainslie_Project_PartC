@@ -7,6 +7,7 @@
 <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
 <style>
   :root {
+    --ui-scale: 0.8;
     --bg: #f6f7f9;
     --panel: #ffffff;
     --ink: #1a1d23;
@@ -27,6 +28,18 @@
     background: linear-gradient(165deg, #eef2f6 0%, #f7f5f1 45%, #e9eef3 100%);
     color: var(--ink);
     min-height: 100vh;
+  }
+  /* ~80% browser-zoom feel for UI + Plotly charts */
+  html {
+    zoom: var(--ui-scale);
+  }
+  @supports not (zoom: 1) {
+    body {
+      transform: scale(var(--ui-scale));
+      transform-origin: top center;
+      width: calc(100% / var(--ui-scale));
+      margin-left: calc((100% - (100% / var(--ui-scale))) / 2);
+    }
   }
   .wrap {
     max-width: min(1680px, 90vw);
