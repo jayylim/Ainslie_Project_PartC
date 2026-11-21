@@ -488,28 +488,30 @@ const UI_SCALE =
 function onStickyGraphClick(ev) {
   if (section !== "sticky") return;
   const pt = ev.points && ev.points[0];
-  if (!pt) return;
-  const meta = pt.data && pt.data.meta;
-  const isCurrent =
-    (meta && (meta.is_current === true || meta.is_current === 1)) ||
-    String((pt.data && pt.data.name) || "").includes("(current)");
-  if (!isCurrent) return;
+  if (!pt || pt.x == null || !Number.isFinite(Number(pt.x))) return;
+  // Any curve: x is stickiness s on the shared axis (same as clicking the black curve).
   setStickiness(pt.x);
   refreshStickySailsOnly();
 }
 
 function ensureStickyClickHandler() {
   const chart = document.getElementById("chartGraph");
-  if (!chart || typeof chart.on !== "function") return;
+  if (!chart) return;
   // Re-bind after every plot: newPlot can drop listeners.
-  if (stickyClickBound && typeof chart.removeListener === "function") {
-    try {
-      chart.removeListener("plotly_click", onStickyGraphClick);
-    } catch (_err) {
-      /* ignore */
+  if (stickyClickBound) {
+    if (typeof chart.removeListener === "function") {
+      try {
+        chart.removeListener("plotly_click", onStickyGraphClick);
+      } catch (_err) {
+        /* ignore */
+      }
     }
+    chart.removeEventListener("plotly_click", onStickyGraphClick);
   }
-  chart.on("plotly_click", onStickyGraphClick);
+  if (typeof chart.on === "function") {
+    chart.on("plotly_click", onStickyGraphClick);
+  }
+  chart.addEventListener("plotly_click", onStickyGraphClick);
   stickyClickBound = true;
 }
 
