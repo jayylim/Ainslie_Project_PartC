@@ -1416,7 +1416,7 @@ export function sticky_curves(agent, environment, state, delay_max, delay_step, 
       yaxis: { title: "Max SS resisted", range: [y_lo, y_hi], autorange: false },
       legend: { orientation: "h", y: -0.22 },
       margin: { l: 60, r: 20, t: 50, b: 80 },
-      height: 420,
+      height: 520,
       hovermode: "closest",
     },
     meta: {
