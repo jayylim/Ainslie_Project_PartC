@@ -1366,8 +1366,6 @@ export function sticky_curves(agent, environment, state, delay_max, delay_step, 
     for (const v of c.max_ss) if (v != null) focus_vals.push(v);
   }
 
-  // Default y zoom: center on nearby delays, but keep a tall enough window
-  // so the initial view is not a short band around the focus curves.
   let y_lo, y_hi;
   if (focus_vals.length) {
     const lo = Math.min(...focus_vals);

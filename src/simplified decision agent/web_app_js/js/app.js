@@ -56,6 +56,8 @@ const steppableDemoSelect = document.getElementById("steppableDemoSelect");
 const delayMaxEl = document.getElementById("delayMax");
 const delayStepEl = document.getElementById("delayStep");
 const stickinessEl = document.getElementById("stickiness");
+const sailsStickinessEl = document.getElementById("sailsStickiness");
+const sailsStickinessValEl = document.getElementById("sailsStickinessVal");
 const btnStep = document.getElementById("btnStep");
 const btnStepBack = document.getElementById("btnStepBack");
 const btnReset = document.getElementById("btnReset");
@@ -352,8 +354,16 @@ function clampStickiness(raw) {
   return Math.round(s * 100) / 100;
 }
 
+function syncSailsStickinessLabel(s) {
+  if (!sailsStickinessValEl) return;
+  sailsStickinessValEl.textContent = Number(s).toFixed(2);
+}
+
 function setStickiness(raw) {
-  stickinessEl.value = String(clampStickiness(raw));
+  const s = clampStickiness(raw);
+  stickinessEl.value = String(s);
+  if (sailsStickinessEl) sailsStickinessEl.value = String(s);
+  syncSailsStickinessLabel(s);
 }
 
 function plotOpts() {
@@ -704,6 +714,11 @@ delayStepEl.addEventListener("input", () => {
   }
 });
 stickinessEl.addEventListener("input", () => {
+  const draft = parseStickinessDraft(stickinessEl.value);
+  if (draft != null) {
+    if (sailsStickinessEl) sailsStickinessEl.value = String(draft);
+    syncSailsStickinessLabel(draft);
+  }
   if (section === "sticky") {
     clearTimeout(configTimer);
     configTimer = setTimeout(refreshStickySailsOnly, 40);
@@ -714,6 +729,16 @@ stickinessEl.addEventListener("change", () => {
   setStickiness(stickinessEl.value);
   if (section === "sticky") refreshStickySailsOnly();
 });
+if (sailsStickinessEl) {
+  sailsStickinessEl.addEventListener("input", () => {
+    setStickiness(sailsStickinessEl.value);
+    if (section === "sticky") {
+      clearTimeout(configTimer);
+      configTimer = setTimeout(refreshStickySailsOnly, 40);
+    }
+  });
+}
+setStickiness(stickinessEl.value);
 syncStickyLabels();
 syncViewPanes();
 
