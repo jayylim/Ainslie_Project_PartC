@@ -1082,7 +1082,7 @@ export function hyperbolic_frame(reward, initial_delay, discount_factor, { elaps
         font: { size: 15, color: "#1a1d23" },
       },
       xaxis: {
-        title: "Hours from approaching reward",
+        title: "Hours to approaching reward",
         range: [x_lo, x_hi],
         autorange: false,
         fixedrange: true,
@@ -1296,7 +1296,7 @@ export function hyperbolic_ss_ll_frame(
         font: { size: 15, color: "#1a1d23" },
       },
       xaxis: {
-        title: "Hours from approaching reward",
+        title: "Hours to approaching reward",
         range: [-0.2, x_hi],
         autorange: false,
         fixedrange: true,
