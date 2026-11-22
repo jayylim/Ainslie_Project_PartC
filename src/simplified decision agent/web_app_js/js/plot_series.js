@@ -1031,6 +1031,8 @@ export function hyperbolic_frame(reward, initial_delay, discount_factor, { elaps
   const [xs, ys] = _dense_hyperbolic_xy(reward, remaining, k);
   const perceived = V(remaining);
   const x_hi = Math.max(initial_delay, 1);
+  // Extra left pad so the day-0 value label is not clipped.
+  const x_lo = -Math.max(2.0, x_hi * 0.12);
   const y_hi = Number(reward) + 1.0;
 
   return {
@@ -1065,7 +1067,7 @@ export function hyperbolic_frame(reward, initial_delay, discount_factor, { elaps
       },
       xaxis: {
         title: "Hours from approaching reward",
-        range: [-0.2, x_hi],
+        range: [x_lo, x_hi],
         autorange: false,
         fixedrange: true,
       },
@@ -1087,7 +1089,7 @@ export function hyperbolic_frame(reward, initial_delay, discount_factor, { elaps
         },
       ],
       legend: { orientation: "h", y: -0.15 },
-      margin: { l: 60, r: 20, t: 50, b: 70 },
+      margin: { l: 72, r: 20, t: 50, b: 70 },
       height: 620,
       uirevision: `hyp|${reward}|${initial_delay}|${k}`,
     },
