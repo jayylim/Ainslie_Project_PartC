@@ -582,7 +582,7 @@ function fillMeta(el, payload) {
 const UI_SCALE =
   Number.parseFloat(
     getComputedStyle(document.documentElement).getPropertyValue("--ui-scale")
-  ) || 0.8;
+  ) || 0.72;
 
 function onStickyGraphClick(ev) {
   if (demo !== "sticky") return;

@@ -560,7 +560,7 @@ function _sails_dual_panel(
     1
   );
   const label_pad = short_vision ? LABEL_DISCOUNT_OFFSET + 4 : LABEL_AGG_OFFSET + 6;
-  const pad_x = Math.max(label_pad, x_max * 0.12);
+  const pad_x = Math.max(label_pad, x_max * 0.2);
   const [xticks, xticklabels] = _hour_xticks(x_max);
   const title = _choice_title(title_prefix, action);
 
