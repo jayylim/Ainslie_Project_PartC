@@ -560,7 +560,7 @@ function _sails_dual_panel(
     1
   );
   const label_pad = short_vision ? LABEL_DISCOUNT_OFFSET + 4 : LABEL_AGG_OFFSET + 6;
-  const pad_x = Math.max(label_pad, x_max * 0.12);
+  const pad_x = Math.max(label_pad, x_max * 0.2);
   const [xticks, xticklabels] = _hour_xticks(x_max);
   const title = _choice_title(title_prefix, action);
 
@@ -762,6 +762,26 @@ export function sticky_step_frame(agent, environment, state, { day = null, last_
     last_aligned = last_realized === last_intent;
   }
 
+  // Current foresight intent vs previous realized action (not the last roll).
+  let intent_stick = null;
+  if (last_realized != null) {
+    intent_stick = intent === last_realized;
+  }
+  let intent_stick_html;
+  let intent_stick_label;
+  if (intent_stick == null) {
+    intent_stick_html = "intent: <b>free</b> (no prior action)";
+    intent_stick_label = "free";
+  } else if (intent_stick) {
+    intent_stick_html =
+      'intent: <span style="color:#2e7d32;font-weight:600;">stick</span>';
+    intent_stick_label = "stick";
+  } else {
+    intent_stick_html =
+      'intent: <span style="color:#c62828;font-weight:600;">switch</span>';
+    intent_stick_label = "switch";
+  }
+
   let last_action_html;
   let last_action_label;
   if (last_realized == null) {
@@ -772,17 +792,8 @@ export function sticky_step_frame(agent, environment, state, { day = null, last_
     if (last_stuck == null) roll = "free";
     else if (last_stuck) roll = "stick";
     else roll = "switch";
-    let align_html;
-    let align_label;
-    if (last_aligned) {
-      align_html = '<span style="color:#2e7d32;font-weight:600;">aligned with intent</span>';
-      align_label = "aligned";
-    } else {
-      align_html = `<span style="color:#c62828;font-weight:600;">diverged from intent (${last_intent})</span>`;
-      align_label = `diverged (wanted ${last_intent})`;
-    }
-    last_action_html = `Last action: <b>${last_realized}</b> (${roll}) · ${align_html}`;
-    last_action_label = `${last_realized} (${roll}, ${align_label})`;
+    last_action_html = `Last action: <b>${last_realized}</b> (${roll})`;
+    last_action_label = `${last_realized} (${roll})`;
   }
 
   let s_line;
@@ -794,7 +805,10 @@ export function sticky_step_frame(agent, environment, state, { day = null, last_
   }
 
   const title = {
-    text: `${day_bit}${s_line}<br>horizon=${n}  |  <b>Agent would choose ${intent}</b><br>${last_action_html}`,
+    text:
+      `${day_bit}${s_line}<br>horizon=${n}  |  ` +
+      `<b>Agent would choose ${intent}</b> · ${intent_stick_html}` +
+      `<br>${last_action_html}`,
     font: { size: 15, color: "#1a1d23" },
   };
 
@@ -809,6 +823,8 @@ export function sticky_step_frame(agent, environment, state, { day = null, last_
     day,
     horizon: n,
     choice: intent,
+    intent_stick,
+    intent_stick_label,
     action_values,
     ll_ss_gap: action_values.resist - action_values.dessert,
     perceived_s,

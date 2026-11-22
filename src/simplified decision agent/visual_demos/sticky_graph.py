@@ -92,7 +92,7 @@ def ll_delays_for_env(decision_interval, main_delay_LL, show_other_delays):
     if not show_other_delays:
         return [main_delay_LL]
 
-    delay_step = max(1, int(decision_interval) // 6)
+    delay_step = max(1, int(decision_interval) // 4)
     delay_max = max(int(decision_interval), main_delay_LL)
     # not including 0h as it is a straight line
     delays = list(range(delay_step, delay_max + 1, delay_step))
@@ -161,21 +161,21 @@ for delay_LL in ll_delays:
     )
 
 axes.set_xlabel("Perceived stickiness (s)")
-axes.set_ylabel("Max SS-value resisted)")
+axes.set_ylabel("Max SS-value resisted")
 axes.set_title(
     "Max SS Resisted over Perceived Stickiness",
     pad=30,
 )
 axes.text(0.5, 1.02,
-    f"LL value = {reward_LL} @ {main_delay_LL}h | "
-    f"Bundling horizon = {horizon}, k = {discount_factor}",
+    f"LL: [{reward_LL}, {main_delay_LL}h] | "
+    f"Agent horizon = {horizon} | k = {discount_factor}",
     transform=axes.transAxes,
     ha="center",
     va="bottom",
     fontsize=10,
 )
 axes.set_xlim(stickiness_min, stickiness_max)
-axes.set_ylim(0, 10)
+axes.set_ylim(0, 8)
 axes.yaxis.set_major_locator(MultipleLocator(1))
 axes.yaxis.set_minor_locator(MultipleLocator(0.25))
 axes.grid(True, which="major", alpha=0.4)
@@ -183,4 +183,5 @@ axes.grid(True, which="minor", alpha=0.2)
 axes.legend()
 
 plt.show()
+
 

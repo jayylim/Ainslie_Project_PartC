@@ -499,19 +499,22 @@ function fillMeta(el, payload) {
       m.perceived_s != null ? Number(m.perceived_s).toFixed(3) : "—";
     const priorMean =
       m.prior_mean != null ? Number(m.prior_mean).toFixed(3) : "—";
+    let intentStickBit = "";
+    if (m.intent_stick == null) {
+      intentStickBit =
+        ' · intent <span style="font-weight:600;">free</span>';
+    } else if (m.intent_stick) {
+      intentStickBit =
+        ' · intent <span style="color:#2e7d32;font-weight:600;">stick</span>';
+    } else {
+      intentStickBit =
+        ' · intent <span style="color:#c62828;font-weight:600;">switch</span>';
+    }
     let rollBit = "";
     if (m.last_realized != null) {
       const stuckLabel =
         m.last_stuck == null ? "free" : m.last_stuck ? "stick" : "switch";
-      const aligned =
-        m.last_aligned != null
-          ? !!m.last_aligned
-          : m.last_realized === m.last_intent;
-      const alignBit = aligned
-        ? '<span style="color:#2e7d32;font-weight:600;">aligned</span>'
-        : '<span style="color:#c62828;font-weight:600;">diverged</span>';
-      rollBit =
-        ` · last intent=${m.last_intent} → realized=${m.last_realized} (${stuckLabel}, ${alignBit})`;
+      rollBit = ` · last realized=${m.last_realized} (${stuckLabel})`;
     }
     const doneBit = m.finished ? " · finished" : "";
     el.innerHTML =
@@ -519,6 +522,7 @@ function fillMeta(el, payload) {
       `${learnBit} · foresight s=${perc} · ŝ=${sHat} · prior mean=${priorMean} · ` +
       `α=${Number(m.alpha).toFixed(1)} β=${Number(m.beta).toFixed(1)} · ` +
       `<span class="choice">would choose ${m.choice}</span>` +
+      intentStickBit +
       ` · dessert = ${Number(av.dessert).toFixed(4)} · resist = ${Number(av.resist).toFixed(4)}` +
       rollBit +
       doneBit;
@@ -578,7 +582,7 @@ function fillMeta(el, payload) {
 const UI_SCALE =
   Number.parseFloat(
     getComputedStyle(document.documentElement).getPropertyValue("--ui-scale")
-  ) || 0.8;
+  ) || 0.72;
 
 function onStickyGraphClick(ev) {
   if (demo !== "sticky") return;
