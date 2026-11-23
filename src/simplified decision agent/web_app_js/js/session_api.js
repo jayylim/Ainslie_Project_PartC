@@ -338,8 +338,7 @@ export function apiSteppableStep(demo = "visualizing_main") {
     const day = _sticky_session.day;
 
     const [intent] = agent.choose_action(state, environment);
-    const stickiness = agent.perceived_stickiness(environment);
-    const [nextState, finished, info] = environment.step(intent, stickiness);
+    const [nextState, finished, info] = environment.step(intent);
     _sticky_session.state = nextState;
     _sticky_session.last_info = info;
 

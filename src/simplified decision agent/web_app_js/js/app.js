@@ -136,7 +136,7 @@ function syncChrome() {
   btnStepBack.classList.toggle("hidden", demo !== "hyperbolic_ss_ll");
   if (demo === "sticky_step") {
     stepHint.textContent =
-      "Step advances one decision day; stick/switch rolls use perceived s (feedback loop when learning)";
+      "Step advances one decision day; intent is realized and belief updates from stick/switch choices";
   } else if (demo === "hyperbolic_ss_ll") {
     stepHint.textContent = "Step moves the rewards one hour closer";
   } else {
@@ -514,7 +514,7 @@ function fillMeta(el, payload) {
     if (m.last_realized != null) {
       const stuckLabel =
         m.last_stuck == null ? "free" : m.last_stuck ? "stick" : "switch";
-      rollBit = ` · last realized=${m.last_realized} (${stuckLabel})`;
+      rollBit = ` · last choice=${m.last_realized} (${stuckLabel})`;
     }
     const doneBit = m.finished ? " · finished" : "";
     el.innerHTML =

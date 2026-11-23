@@ -94,7 +94,7 @@ _hyp_ss_ll_session = {
 }
 
 # sticky_step.py: StickyTimelineEnvironment + StickyHypAgent + Beta belief
-# perceived_s preset = prior mean α/(α+β); rolls + foresight use perceived stickiness
+# perceived_s preset = prior mean α/(α+β); foresight uses perceived stickiness
 _sticky_step_opts = {
     "learn_stickiness": DEFAULT_LEARN_STICKINESS,
     "prior_alpha": DEFAULT_PRIOR_ALPHA,
@@ -390,7 +390,7 @@ def api_steppable_step():
     visualizing_main: step the env one day (same as matplotlib click loop).
     hyperbolic_curve: advance elapsed by 1h toward delivery (agent stays at day 0).
     hyperbolic_ss_ll: same approach for SS + LL (SS delay = ¾ LL; preference highlight).
-    sticky_step: intent → StickyTimelineEnvironment.step (stick/switch roll + belief).
+    sticky_step: intent → StickyTimelineEnvironment.step (realize intent + belief).
     """
     demo = _steppable_demo()
 
@@ -434,8 +434,7 @@ def api_steppable_step():
         day = _sticky_session["day"]
 
         intent, _ = agent.choose_action(state, environment)
-        stickiness = agent.perceived_stickiness(environment)
-        state, finished, info = environment.step(intent, stickiness=stickiness)
+        state, finished, info = environment.step(intent)
         _sticky_session["state"] = state
         _sticky_session["last_info"] = info
 
@@ -511,7 +510,7 @@ def api_sticky_options():
     Update sticky_step options.
 
     learn_stickiness: Off → fixed preset perceived_s (= prior mean);
-      On → foresight/rolls track Beta posterior mean (feedback loop).
+      On → foresight tracks Beta posterior mean from the agent's stick/switch choices.
     prior_alpha / prior_beta: Beta prior (defaults from main.sticky_env_params).
       Changing either rebuilds the sticky session (belief reset).
     seed: optional int; blank/None → non-reproducible RNG. Changing rebuilds.
@@ -1117,7 +1116,7 @@ function syncStepHint() {
       "Step advances one decision day in the environment";
     } else if (demo === "sticky_step") {
     stepHint.textContent =
-      "Step advances one decision day; stick/switch rolls use perceived s (feedback loop when learning)";
+      "Step advances one decision day; intent is realized and belief updates from stick/switch choices";
   } else {
     stepHint.textContent =
       "Step moves the reward one hour closer";
@@ -1419,15 +1418,7 @@ function fillMeta(el, payload) {
     if (m.last_realized != null) {
       const stuckLabel =
         m.last_stuck == null ? "free" : m.last_stuck ? "stick" : "switch";
-      const aligned =
-        m.last_aligned != null
-          ? !!m.last_aligned
-          : m.last_realized === m.last_intent;
-      const alignBit = aligned
-        ? '<span style="color:#2e7d32;font-weight:600;">aligned</span>'
-        : '<span style="color:#c62828;font-weight:600;">diverged</span>';
-      rollBit =
-        ` · last intent=${m.last_intent} → realized=${m.last_realized} (${stuckLabel}, ${alignBit})`;
+      rollBit = ` · last choice=${m.last_realized} (${stuckLabel})`;
     }
     const doneBit = m.finished ? " · finished" : "";
     el.innerHTML =

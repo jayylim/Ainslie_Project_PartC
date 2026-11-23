@@ -1,8 +1,8 @@
 /**
  * Port of learning/bayesian_stickiness.py
  *
- * Observes stuck ∈ {0, 1} from stick/switch rolls (env uses perceived s).
- * Learn On: rolls use updating ŝ → belief/generative feedback loop.
+ * Observes stuck ∈ {0, 1} from the agent's chosen action vs previous action
+ * (intent is always realized). Learn On: foresight uses updating ŝ.
  */
 
 function lgamma(z) {

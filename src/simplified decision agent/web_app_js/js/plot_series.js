@@ -762,7 +762,7 @@ export function sticky_step_frame(agent, environment, state, { day = null, last_
     last_aligned = last_realized === last_intent;
   }
 
-  // Current foresight intent vs previous realized action (not the last roll).
+  // Current foresight intent vs previous realized action.
   let intent_stick = null;
   if (last_realized != null) {
     intent_stick = intent === last_realized;
@@ -788,12 +788,12 @@ export function sticky_step_frame(agent, environment, state, { day = null, last_
     last_action_html = "Last action: —";
     last_action_label = null;
   } else {
-    let roll;
-    if (last_stuck == null) roll = "free";
-    else if (last_stuck) roll = "stick";
-    else roll = "switch";
-    last_action_html = `Last action: <b>${last_realized}</b> (${roll})`;
-    last_action_label = `${last_realized} (${roll})`;
+    let choice_kind;
+    if (last_stuck == null) choice_kind = "free";
+    else if (last_stuck) choice_kind = "stick";
+    else choice_kind = "switch";
+    last_action_html = `Last action: <b>${last_realized}</b> (${choice_kind})`;
+    last_action_label = `${last_realized} (${choice_kind})`;
   }
 
   let s_line;

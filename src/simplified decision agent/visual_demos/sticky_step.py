@@ -4,10 +4,10 @@ Stepped sticky sails + Bayesian stickiness belief panel.
 Left: SS / LL sails and sticky aggregates under perceived ŝ.
 Right: Beta posterior over stickiness s, with ŝ / fixed prior-mean overlay.
 
-Stick/switch rolls and foresight both use perceived stickiness (feedback loop):
+Intent is always realized. Belief updates from whether the agent stuck or
+switched relative to the previous action. Foresight uses:
   learn Off → fixed preset = Beta prior mean α₀/(α₀+β₀)
-  learn On  → updating Beta posterior mean (rolls use ŝ too)
-Belief updates from stick/switch bits only. Intent does not override rolls.
+  learn On  → updating Beta posterior mean (past choices affect valuation)
 
 Tune prior_alpha / prior_beta in main.sticky_env_params.
 
@@ -41,7 +41,7 @@ prior_alpha = sticky_env_params["prior_alpha"]
 prior_beta = sticky_env_params["prior_beta"]
 fixed_stickiness = prior_alpha / (prior_alpha + prior_beta)  # prior mean / preset
 learn_stickiness = sticky_params["learn_stickiness"]
-seed = None  # fully random; set integer for reproducible rolls
+seed = None  # unused (outcomes are deterministic); kept for API parity
 
 COLORS = {
     "dessert": "#c44e52",
@@ -381,13 +381,13 @@ def main():
             ax_sails, ax_belief, agent, environment, beta_belief, state, steps
         )
         ll_ss_gaps.append(ll_ss_gap)
-        perceived_s = agent.perceived_stickiness(environment)
-        state, finished, info = environment.step(intent, stickiness=perceived_s)
-        align = "aligned" if info["aligned"] else "diverged"
+        state, finished, info = environment.step(intent)
+        stuck_label = (
+            "free" if info["stuck"] is None else ("stick" if info["stuck"] else "switch")
+        )
         print(
             f"  intent={info['intent']}  realized={info['realized']}  "
-            f"stuck={info['stuck']}  {align}  "
-            f"roll_s={info['stickiness']:.4f}  New ŝ={info['s_hat']}"
+            f"choice={stuck_label}  New ŝ={info['s_hat']}"
         )
         print()
         plt.tight_layout()

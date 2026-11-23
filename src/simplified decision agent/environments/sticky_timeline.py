@@ -1,26 +1,21 @@
 """
-Timeline with stick/switch rolls driven by the agent's perceived stickiness.
+Timeline where the agent's intent is always realized.
 
-Generative rule after the first free choice:
-  with probability stickiness  -> stick  (realized = last_action)
-  otherwise                    -> switch (realized = opposite of last_action)
+After the first free choice, each step observes whether the agent stuck or
+switched relative to the previous realized action:
 
-`stickiness` is the agent's perceived s (prior mean if not learning, else
-current Beta posterior mean). When learn On, rolls use the updating ŝ, so
-belief and generative stickiness form a feedback loop.
+  stuck = 1  if intent == last_action
+  stuck = 0  otherwise
 
-Agent intent is logged but does not override the rolled realization after day 0.
+The Beta belief updates from those stick/switch bits only. There is no
+stochastic stickiness roll — perceived stickiness affects foresight valuation
+in StickyHypAgent when learn_stickiness is On, not the environment outcome.
 
-Bayesian belief updates from stick/switch bits only.
 prior_alpha / prior_beta set the Beta prior; fixed foresight stickiness is the
 prior mean α/(α+β). Pass beta_belief explicitly to override auto-construction.
 
 simulate() / rewards stay memoryless — foresight geometry is unchanged.
 """
-
-#from __future__ import annotations
-
-import random
 
 from environments.timeline import TimelineEnvironment
 from learning.bayesian_stickiness import BayesianStickinessBelief
@@ -29,8 +24,18 @@ OTHER = {"dessert": "resist", "resist": "dessert"}
 
 
 class StickyTimelineEnvironment(TimelineEnvironment):
-    def __init__(self, rewards, length=None, start=0, decision_interval=24, prior_alpha=1.0, prior_beta=1.0, beta_belief=None, seed=None):
-        super().__init__( # using timeline environment initialisations
+    def __init__(
+        self,
+        rewards,
+        length=None,
+        start=0,
+        decision_interval=24,
+        prior_alpha=1.0,
+        prior_beta=1.0,
+        beta_belief=None,
+        seed=None,
+    ):
+        super().__init__(
             rewards=rewards,
             length=length,
             start=start,
@@ -48,8 +53,8 @@ class StickyTimelineEnvironment(TimelineEnvironment):
             self.beta_belief = BayesianStickinessBelief(
                 alpha=self.prior_alpha, beta=self.prior_beta
             )
+        # seed retained for API compatibility; outcomes are deterministic
         self.seed = seed
-        self.rng = random.Random(seed)
 
         self.last_action = None
         self.stick_history = []  # 1 = stick, 0 = switch (no entry on first choice)
@@ -68,7 +73,6 @@ class StickyTimelineEnvironment(TimelineEnvironment):
         self.stick_history = []
         self.intent_history = []
         self.action_history = []
-        self.rng = random.Random(self.seed)
         if self.beta_belief is not None:
             self.beta_belief.reset()
         return self.time_step
@@ -79,32 +83,21 @@ class StickyTimelineEnvironment(TimelineEnvironment):
         except KeyError as exc:
             raise ValueError(f"Unknown action {action!r}") from exc
 
-    def step(self, intent, stickiness):
+    def step(self, intent):
         """
-        Stick/switch with probability `stickiness` (agent's perceived s).
+        Realize `intent` and update stickiness belief from the agent's choice.
 
         Returns (next_state, finished, info) where info has:
-          intent, realized, stuck (None on first choice), stickiness, s_hat
+          intent, realized (= intent), stuck (None on first choice), s_hat
         """
         if intent not in self.action_map:
             raise ValueError(f"Unknown intent {intent!r}")
 
-        s = float(stickiness)
-        if not 0.0 <= s <= 1.0:
-            raise ValueError("stickiness must be in [0, 1]")
-
-        # agent's first choice is always deterministic
+        realized = intent
         if self.last_action is None:
-            realized = intent
             stuck = None
-        # stochastic stickiness from perceived s (feedback loop when learning)
         else:
-            if self.rng.random() < s:
-                realized = self.last_action
-                stuck = 1
-            else:
-                realized = self._opposite(self.last_action)
-                stuck = 0
+            stuck = 1 if intent == self.last_action else 0
 
         self.intent_history.append(intent)
         self.action_history.append(realized)
@@ -125,8 +118,7 @@ class StickyTimelineEnvironment(TimelineEnvironment):
             "intent": intent,
             "realized": realized,
             "stuck": stuck,
-            "aligned": realized == intent,
-            "stickiness": s,
+            "aligned": True,
             "s_hat": self.s_hat(),
         }
         return self.time_step, finished, info

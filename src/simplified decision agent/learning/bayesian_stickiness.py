@@ -2,12 +2,13 @@
 Beta–Bernoulli belief over stickiness s = P(a_{t+1} = a_t).
 
 Prior:    s ~ Beta(alpha0, beta0)
-Observe:  stuck ∈ {0, 1}  (1 = stick, 0 = switch)
+Observe:  stuck ∈ {0, 1}  (1 = stick, 0 = switch) from the agent's chosen action
+          relative to the previous realized action (intent is always realized).
 Posterior: Beta(alpha0 + #sticks, beta0 + #switches)
 
-Perceived stickiness for foresight (and stick/switch rolls) is the prior
-mean α₀/(α₀+β₀) when not learning, else the posterior mean α/(α+β).
-When learning, rolls use ŝ too → belief/generative feedback loop.
+Perceived stickiness for foresight is the prior mean α₀/(α₀+β₀) when not
+learning, else the posterior mean α/(α+β). The environment does not sample
+stick/switch rolls from s.
 """
 
 from __future__ import annotations
