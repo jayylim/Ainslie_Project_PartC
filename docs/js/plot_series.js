@@ -800,8 +800,7 @@ export function sticky_step_frame(agent, environment, state, { day = null, last_
   if (learn) s_line = `Perceived stickiness=${perceived_s.toFixed(3)} (learning)`;
   else {
     s_line =
-      `Fixed stickiness=${prior_mean.toFixed(3)} ` +
-      `(prior mean α/(α+β), α=${Number(beta_belief.alpha0)} β=${Number(beta_belief.beta0)})`;
+      `Fixed stickiness=${prior_mean.toFixed(3)}`;
   }
 
   const title = {

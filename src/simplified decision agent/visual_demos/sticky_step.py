@@ -288,8 +288,7 @@ def draw_frame(ax_sails, ax_belief, agent, environment, beta_belief, state, step
         s_line = f"Perceived stickiness={perceived_s:.3f} (learning)"
     else:
         s_line = (
-            f"Fixed stickiness={prior_mean:.3f} "
-            f"(prior mean α/(α+β), α={prior_alpha:g} β={prior_beta:g})"
+            f"Fixed stickiness={prior_mean:.3f}"
         )
     ax_sails.set_title(
         f"Day {steps}  | {s_line}\n"

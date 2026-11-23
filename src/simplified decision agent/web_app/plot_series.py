@@ -983,8 +983,7 @@ def sticky_step_frame(agent, environment, state, *, day=None, last_info=None):
         s_line = f"Perceived stickiness={perceived_s:.3f} (learning)"
     else:
         s_line = (
-            f"Fixed stickiness={prior_mean:.3f} "
-            f"(prior mean α/(α+β), α={beta_belief.alpha0:g} β={beta_belief.beta0:g})"
+            f"Fixed stickiness={prior_mean:.3f}"
         )
     title = {
         "text": (

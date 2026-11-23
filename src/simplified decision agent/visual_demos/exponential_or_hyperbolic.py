@@ -24,8 +24,8 @@ except Exception:
 # }
 
 LL = {
-    "value": 11,
-    "delay": 12,
+    "value": 30,
+    "delay": 10,
 }
 
 discount = 0.8  # δ / k
@@ -38,7 +38,7 @@ COLORS = {
 fig, axes = plt.subplots()
 
 y_max = LL["value"] + 1
-plot_x_max = 40
+plot_x_max = 19
 N_SAMPLES = 200
 
 axes.set_xlim(0, plot_x_max)
@@ -46,8 +46,10 @@ axes.set_ylim(0, y_max)
 #axes.set_xlabel("Hours from now")
 axes.set_xlabel("Hours from reward")
 axes.set_ylabel("Reward value")
+axes.set_xticks(np.arange(0, plot_x_max+1, 2.5))
 #axes.set_ylabel("Perceived value")
 #axes.set_title("Exponential vs Hyperbolic Discounting (LL)")
+axes.set_title(f"Exponential Discounting of Rewards Over Time")
 #axes.set_title(f"Exponentially Increasing Value of Approaching Rewards")
 
 # time_step = []
@@ -65,18 +67,18 @@ distance = time_step
 values_exp = LL["value"] * (discount ** distance)  # exponential
 values_hyp = LL["value"] / (1.0 + discount * distance)  # hyperbolic
 
-# axes.plot(
-#     time_step,
-#     values_exp,
-#     color=COLORS["exponential"],
-#     label=f'Exponential Discounting',
-# )
 axes.plot(
     time_step,
-    values_hyp,
-    color=COLORS["hyperbolic"],
-    label=f'Hyperbolic Discounting',
+    values_exp,
+    color=COLORS["exponential"],
+    label=f'Exponential Discounting',
 )
+# axes.plot(
+#     time_step,
+#     values_hyp,
+#     color=COLORS["hyperbolic"],
+#     label=f'Hyperbolic Discounting',
+# )
 #axes.axvline(remaining, linestyle="--", color=color, alpha=0.5)
 
 #axes.legend(loc="upper right")
