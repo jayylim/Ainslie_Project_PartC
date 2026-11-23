@@ -29,6 +29,7 @@ const DEFAULT_LEARN_STICKINESS = true;
 const DEFAULT_PRIOR_ALPHA = 1;
 const DEFAULT_PRIOR_BETA = 1;
 const DEFAULT_PRIOR_MEAN = 0.5;
+const DEFAULT_STICKY_STEP_SEED = "";
 
 const STEPPABLE_DEMOS = new Set(["hyperbolic_ss_ll", "sticky_step"]);
 
@@ -67,6 +68,7 @@ const learnStickinessOff = document.getElementById("learnStickinessOff");
 const learnStickinessOn = document.getElementById("learnStickinessOn");
 const stickyStepPriorAlphaEl = document.getElementById("stickyStepPriorAlpha");
 const stickyStepPriorBetaEl = document.getElementById("stickyStepPriorBeta");
+const stickyStepSeedEl = document.getElementById("stickyStepSeed");
 const stickyStepPriorMeanEl = document.getElementById("stickyStepPriorMean");
 const delayMaxEl = document.getElementById("delayMax");
 const delayStepEl = document.getElementById("delayStep");
@@ -120,6 +122,7 @@ function applyDefaultsToForm() {
   learnStickiness = !!DEFAULT_LEARN_STICKINESS;
   stickyStepPriorAlphaEl.value = String(DEFAULT_PRIOR_ALPHA);
   stickyStepPriorBetaEl.value = String(DEFAULT_PRIOR_BETA);
+  stickyStepSeedEl.value = optionalToInput(DEFAULT_STICKY_STEP_SEED);
   syncStickyPriorMeanLabel(DEFAULT_PRIOR_MEAN);
   syncLearnStickinessButtons();
 }
@@ -133,7 +136,7 @@ function syncChrome() {
   btnStepBack.classList.toggle("hidden", demo !== "hyperbolic_ss_ll");
   if (demo === "sticky_step") {
     stepHint.textContent =
-      "Step advances one decision day; action follows intent; belief updates from stick/switch";
+      "Step advances one decision day; stick/switch rolls use perceived s (feedback loop when learning)";
   } else if (demo === "hyperbolic_ss_ll") {
     stepHint.textContent = "Step moves the rewards one hour closer";
   } else {
@@ -233,6 +236,7 @@ async function setDemo(name) {
             stickyStepPriorBetaEl.value,
             DEFAULT_PRIOR_BETA
           ),
+          seed: normalizeOptionalInt(stickyStepSeedEl.value),
         }),
       });
       const res = await apiFetch("/api/steppable/reset", {
@@ -315,16 +319,36 @@ function syncStickyPriorMeanLabel(mean) {
   stickyStepPriorMeanEl.textContent = `fixed s=α/(α+β)=${text}`;
 }
 
+function parseOptionalIntDraft(raw) {
+  const s = String(raw).trim();
+  if (s === "") return null;
+  if (s === "-" || s.endsWith(".")) return undefined; // still typing
+  const n = Number(s);
+  if (!Number.isFinite(n) || !Number.isInteger(n)) return undefined;
+  return n;
+}
+
+function normalizeOptionalInt(raw) {
+  const s = String(raw).trim();
+  if (s === "") return null;
+  const n = Number(s);
+  if (!Number.isFinite(n) || !Number.isInteger(n)) return null;
+  return n;
+}
+
 async function pushStickyOptions({ normalizeInputs = false } = {}) {
   let prior_alpha = parsePositiveDraft(stickyStepPriorAlphaEl.value);
   let prior_beta = parsePositiveDraft(stickyStepPriorBetaEl.value);
+  let seed = parseOptionalIntDraft(stickyStepSeedEl.value);
   if (normalizeInputs) {
     prior_alpha = clampPositive(stickyStepPriorAlphaEl.value, DEFAULT_PRIOR_ALPHA);
     prior_beta = clampPositive(stickyStepPriorBetaEl.value, DEFAULT_PRIOR_BETA);
+    seed = normalizeOptionalInt(stickyStepSeedEl.value);
     stickyStepPriorAlphaEl.value = String(prior_alpha);
     stickyStepPriorBetaEl.value = String(prior_beta);
-  } else if (prior_alpha == null || prior_beta == null) {
-    // Still typing a decimal — wait for a complete value.
+    stickyStepSeedEl.value = optionalToInput(seed);
+  } else if (prior_alpha == null || prior_beta == null || seed === undefined) {
+    // Still typing a decimal / incomplete seed — wait for a complete value.
     return null;
   }
   syncStickyPriorMeanLabel(prior_alpha / (prior_alpha + prior_beta));
@@ -335,6 +359,7 @@ async function pushStickyOptions({ normalizeInputs = false } = {}) {
       learn_stickiness: learnStickiness,
       prior_alpha,
       prior_beta,
+      seed,
     }),
   });
   if (!res.ok) throw new Error("HTTP " + res.status);
@@ -360,12 +385,18 @@ function scheduleStickyOptions() {
 
 stickyStepPriorAlphaEl.addEventListener("input", scheduleStickyOptions);
 stickyStepPriorBetaEl.addEventListener("input", scheduleStickyOptions);
+stickyStepSeedEl.addEventListener("input", scheduleStickyOptions);
 stickyStepPriorAlphaEl.addEventListener("change", () => {
   pushStickyOptions({ normalizeInputs: true }).catch((err) => {
     metaEl.textContent = "Sticky options failed: " + err;
   });
 });
 stickyStepPriorBetaEl.addEventListener("change", () => {
+  pushStickyOptions({ normalizeInputs: true }).catch((err) => {
+    metaEl.textContent = "Sticky options failed: " + err;
+  });
+});
+stickyStepSeedEl.addEventListener("change", () => {
   pushStickyOptions({ normalizeInputs: true }).catch((err) => {
     metaEl.textContent = "Sticky options failed: " + err;
   });
@@ -483,7 +514,7 @@ function fillMeta(el, payload) {
     if (m.last_realized != null) {
       const stuckLabel =
         m.last_stuck == null ? "free" : m.last_stuck ? "stick" : "switch";
-      rollBit = ` · last action=${m.last_realized} (${stuckLabel})`;
+      rollBit = ` · last realized=${m.last_realized} (${stuckLabel})`;
     }
     const doneBit = m.finished ? " · finished" : "";
     el.innerHTML =

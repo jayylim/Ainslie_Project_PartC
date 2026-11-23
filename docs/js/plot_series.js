@@ -762,7 +762,7 @@ export function sticky_step_frame(agent, environment, state, { day = null, last_
     last_aligned = last_realized === last_intent;
   }
 
-  // Current foresight intent vs previous realized action (realized always = intent).
+  // Current foresight intent vs previous realized action (not the last roll).
   let intent_stick = null;
   if (last_realized != null) {
     intent_stick = intent === last_realized;

@@ -10,10 +10,11 @@ stickiness s = P(a_{t+1} = a_t) instead of assuming pure commitment:
 When s = 1, long-vision values match HypAgent (pure commitment).
 Acts only through the environment interface (simulate / get_actions).
 
-Foresight stickiness (actions always realize the chosen intent):
+Foresight / roll stickiness (feedback loop when learning):
   learn_stickiness Off → fixed preset perceived_s
     (for StickyTimeline, set this to the Beta prior mean α₀/(α₀+β₀))
   learn_stickiness On  → current Beta posterior mean (requires env.beta_belief)
+  Env stick/switch rolls use the same perceived s as foresight.
 """
 
 

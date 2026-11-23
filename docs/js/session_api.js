@@ -10,6 +10,7 @@ import {
   DEFAULT_PRIOR_ALPHA,
   DEFAULT_PRIOR_BETA,
   DEFAULT_PRIOR_MEAN,
+  DEFAULT_STICKY_STEP_SEED,
   DEFAULT_DELAY_MAX,
   DEFAULT_DELAY_STEP,
   envParams,
@@ -41,6 +42,7 @@ const _sticky_step_opts = {
   prior_alpha: DEFAULT_PRIOR_ALPHA,
   prior_beta: DEFAULT_PRIOR_BETA,
   perceived_s: DEFAULT_PRIOR_MEAN,
+  seed: DEFAULT_STICKY_STEP_SEED,
 };
 
 const _sticky_session = {
@@ -134,6 +136,7 @@ function rebuildStickySession() {
     ...buildEnvParams(_config),
     prior_alpha: Number(_sticky_step_opts.prior_alpha),
     prior_beta: Number(_sticky_step_opts.prior_beta),
+    seed: _sticky_step_opts.seed,
   };
   const environment = new StickyTimelineEnvironment(env_kwargs);
   const agent = new StickyHypAgent(buildStickyAgentParams(_config));
@@ -409,6 +412,19 @@ export function apiStickyOptions(data = {}) {
     if (val <= 0.0) return jsonError(`${key} must be positive`);
     if (Math.abs(val - Number(_sticky_step_opts[key])) > 1e-12) {
       _sticky_step_opts[key] = val;
+      rebuild_needed = true;
+    }
+  }
+
+  if ("seed" in data) {
+    let seed;
+    try {
+      seed = parseOptionalInt(data.seed);
+    } catch {
+      return jsonError("seed must be an integer or blank");
+    }
+    if (seed !== _sticky_step_opts.seed) {
+      _sticky_step_opts.seed = seed;
       rebuild_needed = true;
     }
   }

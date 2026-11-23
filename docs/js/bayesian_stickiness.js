@@ -1,8 +1,8 @@
 /**
  * Port of learning/bayesian_stickiness.py
  *
- * Observes stuck ∈ {0, 1} from whether consecutive followed-through intents
- * match (computed in StickyTimelineEnvironment.step; not sampled).
+ * Observes stuck ∈ {0, 1} from stick/switch rolls (env uses perceived s).
+ * Learn On: rolls use updating ŝ → belief/generative feedback loop.
  */
 
 function lgamma(z) {
