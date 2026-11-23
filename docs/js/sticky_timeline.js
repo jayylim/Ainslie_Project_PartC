@@ -5,20 +5,6 @@ import { BayesianStickinessBelief } from "./bayesian_stickiness.js";
 
 const OTHER = { dessert: "resist", resist: "dessert" };
 
-/** Mulberry32 — deterministic when seed is set; Math.random when seed is null. */
-function makeRng(seed) {
-  if (seed == null) {
-    return () => Math.random();
-  }
-  let t = seed >>> 0;
-  return function random() {
-    t += 0x6d2b79f5;
-    let r = Math.imul(t ^ (t >>> 15), 1 | t);
-    r ^= r + Math.imul(r ^ (r >>> 7), 61 | r);
-    return ((r ^ (r >>> 14)) >>> 0) / 4294967296;
-  };
-}
-
 export class StickyTimelineEnvironment extends TimelineEnvironment {
   constructor({
     rewards,
@@ -43,8 +29,8 @@ export class StickyTimelineEnvironment extends TimelineEnvironment {
       beta_belief != null
         ? beta_belief
         : new BayesianStickinessBelief(this.prior_alpha, this.prior_beta);
+    // Kept for call-site compatibility; unused (no stick/switch sampling).
     this.seed = seed;
-    this.rng = makeRng(seed);
     this.last_action = null;
     this.stick_history = [];
     this.intent_history = [];
@@ -62,7 +48,6 @@ export class StickyTimelineEnvironment extends TimelineEnvironment {
     this.stick_history = [];
     this.intent_history = [];
     this.action_history = [];
-    this.rng = makeRng(this.seed);
     if (this.beta_belief != null) this.beta_belief.reset();
     return this.time_step;
   }
@@ -81,17 +66,15 @@ export class StickyTimelineEnvironment extends TimelineEnvironment {
       throw new Error("stickiness must be in [0, 1]");
     }
 
-    let realized;
+    // Actions always follow the agent's intent.
+    const realized = intent;
+
+    // stuck is deterministic: None on first choice; else 1 iff intent == last_action.
     let stuck;
     if (this.last_action == null) {
-      realized = intent;
       stuck = null;
-    } else if (this.rng() < s) {
-      realized = this.last_action;
-      stuck = 1;
     } else {
-      realized = this._opposite(this.last_action);
-      stuck = 0;
+      stuck = intent === this.last_action ? 1 : 0;
     }
 
     this.intent_history.push(intent);
@@ -110,7 +93,7 @@ export class StickyTimelineEnvironment extends TimelineEnvironment {
       intent,
       realized,
       stuck,
-      aligned: realized === intent,
+      aligned: true, // realized always equals intent
       stickiness: s,
       s_hat: this.s_hat(),
     };

@@ -4,10 +4,10 @@ Stepped sticky sails + Bayesian stickiness belief panel.
 Left: SS / LL sails and sticky aggregates under perceived ŝ.
 Right: Beta posterior over stickiness s, with ŝ / fixed prior-mean overlay.
 
-Stick/switch rolls and foresight both use perceived stickiness:
+Realized actions always follow agent intent. Foresight uses perceived stickiness:
   learn Off → fixed preset = Beta prior mean α₀/(α₀+β₀)
   learn On  → updating Beta posterior mean
-Belief updates from stick/switch bits only.
+Belief updates from whether consecutive intents stick or switch.
 
 Tune prior_alpha / prior_beta in main.sticky_env_params.
 
@@ -384,11 +384,13 @@ def main():
         ll_ss_gaps.append(ll_ss_gap)
         perceived_s = agent.perceived_stickiness(environment)
         state, finished, info = environment.step(intent, stickiness=perceived_s)
-        align = "aligned" if info["aligned"] else "diverged"
+        stuck_label = (
+            "free" if info["stuck"] is None else ("stick" if info["stuck"] else "switch")
+        )
         print(
-            f"  intent={info['intent']}  realized={info['realized']}  "
-            f"stuck={info['stuck']}  {align}  "
-            f"roll_s={info['stickiness']:.4f}  New ŝ={info['s_hat']}"
+            f"  intent={info['intent']}  (=realized)  "
+            f"{stuck_label}  foresight_s={info['stickiness']:.4f}  "
+            f"New ŝ={info['s_hat']}"
         )
         print()
         plt.tight_layout()

@@ -1,24 +1,25 @@
 """
-Timeline with stick/switch rolls driven by perceived stickiness.
+Timeline where realized actions always follow agent intent.
 
-Generative rule after the first free choice:
-  with probability stickiness  -> stick  (realized = last_action)
-  otherwise                    -> switch (realized = opposite of last_action)
+Generative rule:
+  realized = intent  (every day, including day 0)
 
-`stickiness` is the agent's perceived s (prior mean if not learning, else
-current Beta posterior mean). Agent intent is logged but does not override
-the rolled realization after day 0.
+After the first free choice, stick/switch is observed from consecutive intents:
+  stuck = 1  if intent == last_action
+  stuck = 0  if intent != last_action
 
-Bayesian belief updates from stick/switch bits only.
-prior_alpha / prior_beta set the Beta prior; fixed foresight stickiness is the
-prior mean α/(α+β). Pass beta_belief explicitly to override auto-construction.
+No RNG: stuck is never sampled; it is only that equality check.
+
+Bayesian belief updates from those stick/switch bits only.
+
+`stickiness` on step() is the agent's foresight s (prior mean if not learning,
+else current Beta posterior mean). It is logged for diagnostics; it does not
+override realization.
 
 simulate() / rewards stay memoryless — foresight geometry is unchanged.
 """
 
 #from __future__ import annotations
-
-import random
 
 from environments.timeline import TimelineEnvironment
 from learning.bayesian_stickiness import BayesianStickinessBelief
@@ -46,8 +47,8 @@ class StickyTimelineEnvironment(TimelineEnvironment):
             self.beta_belief = BayesianStickinessBelief(
                 alpha=self.prior_alpha, beta=self.prior_beta
             )
+        # Kept for call-site compatibility; unused (no stick/switch sampling).
         self.seed = seed
-        self.rng = random.Random(seed)
 
         self.last_action = None
         self.stick_history = []  # 1 = stick, 0 = switch (no entry on first choice)
@@ -66,7 +67,6 @@ class StickyTimelineEnvironment(TimelineEnvironment):
         self.stick_history = []
         self.intent_history = []
         self.action_history = []
-        self.rng = random.Random(self.seed)
         if self.beta_belief is not None:
             self.beta_belief.reset()
         return self.time_step
@@ -79,10 +79,14 @@ class StickyTimelineEnvironment(TimelineEnvironment):
 
     def step(self, intent, stickiness):
         """
-        Stick/switch with probability `stickiness` (agent's perceived s).
+        Realize intent; record stick/switch vs last action for belief updates.
+
+        stuck is deterministic:
+          None on first choice; else 1 iff intent == last_action, else 0.
+        Never sampled from stickiness.
 
         Returns (next_state, finished, info) where info has:
-          intent, realized, stuck (None on first choice), stickiness, s_hat
+          intent, realized (=intent), stuck, stickiness, s_hat
         """
         if intent not in self.action_map:
             raise ValueError(f"Unknown intent {intent!r}")
@@ -91,18 +95,14 @@ class StickyTimelineEnvironment(TimelineEnvironment):
         if not 0.0 <= s <= 1.0:
             raise ValueError("stickiness must be in [0, 1]")
 
-        # agent's first choice is always deterministic
+        # Actions always follow the agent's intent.
+        realized = intent
+
+        # First choice has no previous action → free; later days observe stick/switch.
         if self.last_action is None:
-            realized = intent
             stuck = None
-        # stochastic stickiness from perceived s
         else:
-            if self.rng.random() < s:
-                realized = self.last_action
-                stuck = 1
-            else:
-                realized = self._opposite(self.last_action)
-                stuck = 0
+            stuck = 1 if intent == self.last_action else 0
 
         self.intent_history.append(intent)
         self.action_history.append(realized)
@@ -123,7 +123,7 @@ class StickyTimelineEnvironment(TimelineEnvironment):
             "intent": intent,
             "realized": realized,
             "stuck": stuck,
-            "aligned": realized == intent,
+            "aligned": True,  # realized always equals intent
             "stickiness": s,
             "s_hat": self.s_hat(),
         }

@@ -101,7 +101,7 @@ Side-by-side of `visual_demos/` (+ `animated demo/`) and `web_app/`.
 
 | | Project | Web |
 | --- | --- | --- |
-| Mechanism | Same: `StickyTimelineEnvironment` + `StickyHypAgent` + Beta belief; intent vs realized stick/switch rolls | Same (`sticky_step_frame`) |
+| Mechanism | Same: `StickyTimelineEnvironment` + `StickyHypAgent` + Beta belief; actions follow intent; belief from stick/switch | Same (`sticky_step_frame`) |
 | Layout | Left sails + sticky aggregates; right Beta posterior with s_true / ŝ | Same dual subplot |
 | Learn toggle | `sticky_params["learn_stickiness"]` | Steppable chrome On/Off (belief always updates; foresight uses init `perceived_s` until first obs, then ŝ) |
 | Advance | Click / keypress | Step button |

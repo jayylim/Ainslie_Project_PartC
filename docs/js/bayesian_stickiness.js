@@ -1,4 +1,9 @@
-/** Port of learning/bayesian_stickiness.py */
+/**
+ * Port of learning/bayesian_stickiness.py
+ *
+ * Observes stuck ∈ {0, 1} from whether consecutive followed-through intents
+ * match (computed in StickyTimelineEnvironment.step; not sampled).
+ */
 
 function lgamma(z) {
   // Lanczos approximation (sufficient for Beta PDF plotting)

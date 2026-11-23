@@ -3,10 +3,11 @@ Beta–Bernoulli belief over stickiness s = P(a_{t+1} = a_t).
 
 Prior:    s ~ Beta(alpha0, beta0)
 Observe:  stuck ∈ {0, 1}  (1 = stick, 0 = switch)
+          from whether consecutive followed-through intents match
 Posterior: Beta(alpha0 + #sticks, beta0 + #switches)
 
-Perceived stickiness for foresight (and stick/switch rolls) is the prior
-mean α₀/(α₀+β₀) when not learning, else the posterior mean α/(α+β).
+Perceived stickiness for foresight is the prior mean α₀/(α₀+β₀) when not
+learning, else the posterior mean α/(α+β).
 """
 
 from __future__ import annotations

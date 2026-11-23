@@ -858,9 +858,10 @@ def sticky_step_frame(agent, environment, state, *, day=None, last_info=None):
     Left: SS / LL hyperbolic sails and sticky EV aggregates under perceived s.
     Right: Beta posterior with ŝ (learn On) or fixed prior-mean (learn Off).
 
-    Environment owns beta_belief (always updates on stick/switch).
-    learn Off → foresight/rolls use preset perceived_s (= prior mean α₀/(α₀+β₀)).
-    learn On  → foresight/rolls track posterior mean ŝ.
+    Environment owns beta_belief (updates when consecutive intents stick/switch).
+    Realized action always equals intent.
+    learn Off → foresight uses preset perceived_s (= prior mean α₀/(α₀+β₀)).
+    learn On  → foresight tracks posterior mean ŝ.
     """
     beta_belief = getattr(environment, "beta_belief", None)
     if beta_belief is None:
@@ -948,7 +949,7 @@ def sticky_step_frame(agent, environment, state, *, day=None, last_info=None):
 
     day_bit = f"Day {day}  |  " if day is not None else ""
 
-    # Realized action from the previous step (None on day 0 before any roll)
+    # Realized action from the previous step (always equals intent; None before day 0)
     last_realized = last_info.get("realized") if last_info else None
     last_stuck = last_info.get("stuck") if last_info else None
     last_intent = last_info.get("intent") if last_info else None
@@ -965,19 +966,8 @@ def sticky_step_frame(agent, environment, state, *, day=None, last_info=None):
             roll = "stick"
         else:
             roll = "switch"
-        if last_aligned:
-            align_html = '<span style="color:#2e7d32;font-weight:600;">aligned with intent</span>'
-            align_label = "aligned"
-        else:
-            align_html = (
-                '<span style="color:#c62828;font-weight:600;">'
-                f"diverged from intent ({last_intent})</span>"
-            )
-            align_label = f"diverged (wanted {last_intent})"
-        last_action_html = (
-            f"Last action: <b>{last_realized}</b> ({roll}) · {align_html}"
-        )
-        last_action_label = f"{last_realized} ({roll}, {align_label})"
+        last_action_html = f"Last action: <b>{last_realized}</b> ({roll})"
+        last_action_label = f"{last_realized} ({roll})"
 
     if learn:
         s_line = f"Perceived stickiness={perceived_s:.3f} (learning)"
