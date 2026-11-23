@@ -50,11 +50,10 @@ DEFAULT_LEARN_STICKINESS = sticky_params["learn_stickiness"]
 DEFAULT_PRIOR_ALPHA = float(sticky_env_params["prior_alpha"])
 DEFAULT_PRIOR_BETA = float(sticky_env_params["prior_beta"])
 DEFAULT_PRIOR_MEAN = DEFAULT_PRIOR_ALPHA / (DEFAULT_PRIOR_ALPHA + DEFAULT_PRIOR_BETA)
-DEFAULT_STICKY_STEP_SEED = None  # blank / None → fresh RNG each rebuild
 
 app = Flask(__name__)
 
-# Immutable seed for "Reset to default"
+# Immutable defaults for "Reset to default"
 _DEFAULT_CONFIG = {
     "ss_value": env_params["rewards"]["SS"]["value"],
     "ss_delay": env_params["rewards"]["SS"]["delay"],
@@ -100,7 +99,6 @@ _sticky_step_opts = {
     "prior_alpha": DEFAULT_PRIOR_ALPHA,
     "prior_beta": DEFAULT_PRIOR_BETA,
     "perceived_s": DEFAULT_PRIOR_MEAN,
-    "seed": DEFAULT_STICKY_STEP_SEED,
 }
 _sticky_session = {
     "environment": None,
@@ -229,7 +227,6 @@ def rebuild_sticky_session():
     env_kwargs = _build_env_params(_config)
     env_kwargs["prior_alpha"] = float(_sticky_step_opts["prior_alpha"])
     env_kwargs["prior_beta"] = float(_sticky_step_opts["prior_beta"])
-    env_kwargs["seed"] = _sticky_step_opts.get("seed")
     environment = StickyTimelineEnvironment(**env_kwargs)
     agent = StickyHypAgent(**_build_sticky_agent_params(_config))
     state = environment.reset()
@@ -514,7 +511,6 @@ def api_sticky_options():
       On → foresight tracks Beta posterior mean.
     prior_alpha / prior_beta: Beta prior (defaults from main.sticky_env_params).
       Changing either rebuilds the sticky session (belief reset).
-    seed: optional int; blank/None → non-reproducible RNG. Changing rebuilds.
     """
     data = request.get_json(force=True, silent=True) or {}
     rebuild_needed = False
@@ -533,18 +529,6 @@ def api_sticky_options():
             return jsonify({"ok": False, "error": f"{key} must be positive"}), 400
         if abs(val - float(_sticky_step_opts[key])) > 1e-12:
             _sticky_step_opts[key] = val
-            rebuild_needed = True
-
-    if "seed" in data:
-        raw_seed = data["seed"]
-        try:
-            seed = _parse_optional_int(raw_seed)
-        except (TypeError, ValueError):
-            return jsonify({"ok": False, "error": "seed must be an integer or blank"}), 400
-        if seed is not None and seed != int(seed):
-            return jsonify({"ok": False, "error": "seed must be an integer or blank"}), 400
-        if seed != _sticky_step_opts.get("seed"):
-            _sticky_step_opts["seed"] = seed
             rebuild_needed = True
 
     if rebuild_needed or _sticky_session["environment"] is None:
@@ -629,9 +613,6 @@ def index():
         default_prior_alpha=DEFAULT_PRIOR_ALPHA,
         default_prior_beta=DEFAULT_PRIOR_BETA,
         default_prior_mean=DEFAULT_PRIOR_MEAN,
-        default_sticky_step_seed=(
-            "" if DEFAULT_STICKY_STEP_SEED is None else DEFAULT_STICKY_STEP_SEED
-        ),
     )
 
 
@@ -967,9 +948,6 @@ PAGE = r"""
         <label style="min-width:110px;">Prior β
           <input type="number" id="stickyStepPriorBeta" value="{{ default_prior_beta }}" min="0.01" step="0.1"/>
         </label>
-        <label style="min-width:110px;">Seed
-          <input type="number" id="stickyStepSeed" value="{{ default_sticky_step_seed }}" step="1" placeholder="random"/>
-        </label>
         <span id="stickyStepPriorMean" style="align-self:flex-end;padding-bottom:0.35rem;color:var(--muted);font-size:0.85rem;">
           fixed s=α/(α+β)={{ "%.3f"|format(default_prior_mean) }}
         </span>
@@ -1037,7 +1015,6 @@ const DEFAULT_LEARN_STICKINESS = {{ default_learn_stickiness|tojson }};
 const DEFAULT_PRIOR_ALPHA = {{ default_prior_alpha|tojson }};
 const DEFAULT_PRIOR_BETA = {{ default_prior_beta|tojson }};
 const DEFAULT_PRIOR_MEAN = {{ default_prior_mean|tojson }};
-const DEFAULT_STICKY_STEP_SEED = {{ default_sticky_step_seed|tojson }};
 
 let vision = DEFAULT_VISION;
 let learnStickiness = !!DEFAULT_LEARN_STICKINESS;
@@ -1067,7 +1044,6 @@ const learnStickinessOff = document.getElementById("learnStickinessOff");
 const learnStickinessOn = document.getElementById("learnStickinessOn");
 const stickyStepPriorAlphaEl = document.getElementById("stickyStepPriorAlpha");
 const stickyStepPriorBetaEl = document.getElementById("stickyStepPriorBeta");
-const stickyStepSeedEl = document.getElementById("stickyStepSeed");
 const stickyStepPriorMeanEl = document.getElementById("stickyStepPriorMean");
 const demoSelect = document.getElementById("demoSelect");
 const steppableDemoSelect = document.getElementById("steppableDemoSelect");
@@ -1097,7 +1073,6 @@ function applyDefaultsToForm() {
   learnStickiness = !!DEFAULT_LEARN_STICKINESS;
   stickyStepPriorAlphaEl.value = String(DEFAULT_PRIOR_ALPHA);
   stickyStepPriorBetaEl.value = String(DEFAULT_PRIOR_BETA);
-  stickyStepSeedEl.value = optionalToInput(DEFAULT_STICKY_STEP_SEED);
   syncStickyPriorMeanLabel(DEFAULT_PRIOR_MEAN);
   syncVisionButtons();
   syncLearnStickinessButtons();
@@ -1251,36 +1226,16 @@ function syncStickyPriorMeanLabel(mean) {
   stickyStepPriorMeanEl.textContent = `fixed s=α/(α+β)=${text}`;
 }
 
-function parseOptionalIntDraft(raw) {
-  const s = String(raw).trim();
-  if (s === "") return null;
-  if (s === "-" || s.endsWith(".")) return undefined; // still typing
-  const n = Number(s);
-  if (!Number.isFinite(n) || !Number.isInteger(n)) return undefined;
-  return n;
-}
-
-function normalizeOptionalInt(raw) {
-  const s = String(raw).trim();
-  if (s === "") return null;
-  const n = Number(s);
-  if (!Number.isFinite(n) || !Number.isInteger(n)) return null;
-  return n;
-}
-
 async function pushStickyOptions({ normalizeInputs = false } = {}) {
   let prior_alpha = parsePositiveDraft(stickyStepPriorAlphaEl.value);
   let prior_beta = parsePositiveDraft(stickyStepPriorBetaEl.value);
-  let seed = parseOptionalIntDraft(stickyStepSeedEl.value);
   if (normalizeInputs) {
     prior_alpha = clampPositive(stickyStepPriorAlphaEl.value, DEFAULT_PRIOR_ALPHA);
     prior_beta = clampPositive(stickyStepPriorBetaEl.value, DEFAULT_PRIOR_BETA);
-    seed = normalizeOptionalInt(stickyStepSeedEl.value);
     stickyStepPriorAlphaEl.value = String(prior_alpha);
     stickyStepPriorBetaEl.value = String(prior_beta);
-    stickyStepSeedEl.value = optionalToInput(seed);
-  } else if (prior_alpha == null || prior_beta == null || seed === undefined) {
-    // Still typing a decimal / incomplete seed — wait for a complete value.
+  } else if (prior_alpha == null || prior_beta == null) {
+    // Still typing a decimal — wait for a complete value.
     return null;
   }
   syncStickyPriorMeanLabel(prior_alpha / (prior_alpha + prior_beta));
@@ -1291,7 +1246,6 @@ async function pushStickyOptions({ normalizeInputs = false } = {}) {
       learn_stickiness: learnStickiness,
       prior_alpha,
       prior_beta,
-      seed,
     }),
   });
   if (!res.ok) throw new Error("HTTP " + res.status);
@@ -1317,18 +1271,12 @@ function scheduleStickyOptions() {
 
 stickyStepPriorAlphaEl.addEventListener("input", scheduleStickyOptions);
 stickyStepPriorBetaEl.addEventListener("input", scheduleStickyOptions);
-stickyStepSeedEl.addEventListener("input", scheduleStickyOptions);
 stickyStepPriorAlphaEl.addEventListener("change", () => {
   pushStickyOptions({ normalizeInputs: true }).catch((err) => {
     metaEl.textContent = "Sticky options failed: " + err;
   });
 });
 stickyStepPriorBetaEl.addEventListener("change", () => {
-  pushStickyOptions({ normalizeInputs: true }).catch((err) => {
-    metaEl.textContent = "Sticky options failed: " + err;
-  });
-});
-stickyStepSeedEl.addEventListener("change", () => {
   pushStickyOptions({ normalizeInputs: true }).catch((err) => {
     metaEl.textContent = "Sticky options failed: " + err;
   });
@@ -1640,7 +1588,6 @@ steppableDemoSelect.addEventListener("change", async () => {
           learn_stickiness: learnStickiness,
           prior_alpha: clampPositive(stickyStepPriorAlphaEl.value, DEFAULT_PRIOR_ALPHA),
           prior_beta: clampPositive(stickyStepPriorBetaEl.value, DEFAULT_PRIOR_BETA),
-          seed: normalizeOptionalInt(stickyStepSeedEl.value),
         }),
       });
     }

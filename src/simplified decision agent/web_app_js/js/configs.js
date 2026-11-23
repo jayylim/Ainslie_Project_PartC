@@ -39,7 +39,6 @@ export const DEFAULT_PRIOR_ALPHA = Number(stickyEnvParams.prior_alpha);
 export const DEFAULT_PRIOR_BETA = Number(stickyEnvParams.prior_beta);
 export const DEFAULT_PRIOR_MEAN =
   DEFAULT_PRIOR_ALPHA / (DEFAULT_PRIOR_ALPHA + DEFAULT_PRIOR_BETA);
-export const DEFAULT_STICKY_STEP_SEED = null;
 
 export const DEFAULT_CONFIG = {
   ss_value: envParams.rewards.SS.value,

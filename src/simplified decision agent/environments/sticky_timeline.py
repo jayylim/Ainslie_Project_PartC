@@ -28,7 +28,7 @@ OTHER = {"dessert": "resist", "resist": "dessert"}
 
 
 class StickyTimelineEnvironment(TimelineEnvironment):
-    def __init__(self, rewards, length=None, start=0, decision_interval=24, prior_alpha=1.0, prior_beta=1.0, beta_belief=None, seed=None):
+    def __init__(self, rewards, length=None, start=0, decision_interval=24, prior_alpha=1.0, prior_beta=1.0, beta_belief=None):
         super().__init__( # using timeline environment initialisations
             rewards=rewards,
             length=length,
@@ -47,8 +47,6 @@ class StickyTimelineEnvironment(TimelineEnvironment):
             self.beta_belief = BayesianStickinessBelief(
                 alpha=self.prior_alpha, beta=self.prior_beta
             )
-        # Kept for call-site compatibility; unused (no stick/switch sampling).
-        self.seed = seed
 
         self.last_action = None
         self.stick_history = []  # 1 = stick, 0 = switch (no entry on first choice)
