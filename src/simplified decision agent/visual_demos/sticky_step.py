@@ -41,7 +41,6 @@ prior_alpha = sticky_env_params["prior_alpha"]
 prior_beta = sticky_env_params["prior_beta"]
 fixed_stickiness = prior_alpha / (prior_alpha + prior_beta)  # prior mean / preset
 learn_stickiness = sticky_params["learn_stickiness"]
-seed = None  # unused (outcomes are deterministic); kept for API parity
 
 COLORS = {
     "dessert": "#c44e52",
@@ -352,7 +351,6 @@ def main():
     environment = StickyTimelineEnvironment(
         **env_params,
         **sticky_env_params,
-        seed=seed,
     )
     beta_belief = environment.beta_belief
     # Preset perceived_s = prior mean α/(α+β); used whenever learn_stickiness is Off
@@ -372,7 +370,7 @@ def main():
     print(
         f"learn_stickiness={learn_stickiness}  "
         f"prior α={prior_alpha} β={prior_beta}  "
-        f"fixed_s=α/(α+β)={fixed_stickiness:.4f}  seed={seed}"
+        f"fixed_s=α/(α+β)={fixed_stickiness:.4f}"
     )
 
     while not finished and (max_steps is None or steps < max_steps):

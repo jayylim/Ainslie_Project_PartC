@@ -33,7 +33,6 @@ class StickyTimelineEnvironment(TimelineEnvironment):
         prior_alpha=1.0,
         prior_beta=1.0,
         beta_belief=None,
-        seed=None,
     ):
         super().__init__(
             rewards=rewards,
@@ -53,8 +52,6 @@ class StickyTimelineEnvironment(TimelineEnvironment):
             self.beta_belief = BayesianStickinessBelief(
                 alpha=self.prior_alpha, beta=self.prior_beta
             )
-        # seed retained for API compatibility; outcomes are deterministic
-        self.seed = seed
 
         self.last_action = None
         self.stick_history = []  # 1 = stick, 0 = switch (no entry on first choice)

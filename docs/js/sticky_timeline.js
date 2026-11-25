@@ -14,7 +14,6 @@ export class StickyTimelineEnvironment extends TimelineEnvironment {
     prior_alpha = 1.0,
     prior_beta = 1.0,
     beta_belief = null,
-    seed = null,
   }) {
     super({ rewards, length, start, decision_interval });
     if (prior_alpha != null && prior_alpha <= 0) {
@@ -29,8 +28,6 @@ export class StickyTimelineEnvironment extends TimelineEnvironment {
       beta_belief != null
         ? beta_belief
         : new BayesianStickinessBelief(this.prior_alpha, this.prior_beta);
-    // seed retained for API compatibility; outcomes are deterministic
-    this.seed = seed;
     this.last_action = null;
     this.stick_history = [];
     this.intent_history = [];
