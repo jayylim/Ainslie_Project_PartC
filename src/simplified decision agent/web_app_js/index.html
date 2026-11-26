@@ -256,6 +256,43 @@
   }
   .params label.param-agent.hidden { display: none; }
   .param-hint.hidden { display: none; }
+  dialog#scanSummaryDialog {
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 0;
+    max-width: min(640px, 92vw);
+    color: var(--ink);
+    font-family: ui-sans-serif, system-ui, sans-serif;
+  }
+  dialog#scanSummaryDialog::backdrop {
+    background: rgba(26, 29, 35, 0.35);
+  }
+  dialog#scanSummaryDialog .dialog-body {
+    padding: 1rem 1.1rem 0.75rem;
+  }
+  dialog#scanSummaryDialog h3 {
+    margin: 0 0 0.55rem;
+    font-size: 1.05rem;
+  }
+  dialog#scanSummaryDialog pre {
+    margin: 0;
+    white-space: pre-wrap;
+    word-break: break-word;
+    font-size: 0.82rem;
+    line-height: 1.35;
+    max-height: min(55vh, 420px);
+    overflow: auto;
+    background: #fafbfc;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: 0.65rem 0.75rem;
+  }
+  dialog#scanSummaryDialog .dialog-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.5rem;
+    padding: 0.65rem 1.1rem 0.9rem;
+  }
 </style>
 </head>
 <body>
@@ -313,6 +350,7 @@
     <button type="button" data-demo="visualise_sails">Simulating Decisions</button>
     <button type="button" data-demo="sticky">Sticky Decisions</button>
     <button type="button" data-demo="sticky_step">Learning about Stickiness</button>
+    <button type="button" data-demo="scan">Scan</button>
   </div>
 
   <div class="panel">
@@ -353,6 +391,32 @@
         <input type="text" class="numeric" id="stickiness" value="0.6" inputmode="decimal" autocomplete="off"/>
       </label>
     </div>
+    <div id="chromeScan" class="chrome hidden">
+      <label style="min-width:96px;">Steps
+        <input type="number" id="scanNSteps" value="60" min="1" step="1"/>
+      </label>
+      <label style="min-width:96px;">s min
+        <input type="number" id="scanSMin" value="0.5" min="0.01" max="0.98" step="0.01"/>
+      </label>
+      <label style="min-width:96px;">s max
+        <input type="number" id="scanSMax" value="0.99" min="0.02" max="0.99" step="0.01"/>
+      </label>
+      <label style="min-width:96px;">s step
+        <input type="number" id="scanSStep" value="0.01" min="0.001" max="0.5" step="0.01"/>
+      </label>
+      <button type="button" class="action" id="btnScanRun">Run scan</button>
+      <button type="button" class="secondary" id="btnScanSummary">Q1 / Q2 summary</button>
+      <div class="range-pair" style="min-width:220px;" title="View filter only: hide priors whose integer N=α+β is outside this range">
+        <span>Prior strength N=α+β: <strong id="scanStrengthVal">2–200</strong></span>
+        <label style="margin:0;">Min
+          <input type="range" id="scanStrengthMin" min="2" max="500" step="1" value="2"/>
+        </label>
+        <label style="margin:0;">Max
+          <input type="range" id="scanStrengthMax" min="2" max="500" step="1" value="200"/>
+        </label>
+      </div>
+      <span id="scanHint" style="color:var(--muted);">Uses top reward / k / horizon; strength sliders filter the plot only; click a row for prior Beta(α, β)</span>
+    </div>
 
     <div id="singleView">
       <div id="meta" class="meta-line"></div>
@@ -377,6 +441,15 @@
   </div>
 </div>
 
+<dialog id="scanSummaryDialog">
+  <div class="dialog-body">
+    <h3>Scan Q1 / Q2 summary</h3>
+    <pre id="scanSummaryBody">Run a scan first.</pre>
+  </div>
+  <div class="dialog-actions">
+    <button type="button" class="secondary" id="btnScanSummaryClose">Close</button>
+  </div>
+</dialog>
 
 <script type="module" src="./js/app.js"></script>
 </body>

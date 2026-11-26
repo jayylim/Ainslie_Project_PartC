@@ -1,4 +1,4 @@
-import { apiFetch } from "./session_api.js";
+import { apiFetch, DEFAULT_SCAN_OPTS } from "./session_api.js";
 
 const DEFAULT_CONFIG = {
   ss_value: 3,
@@ -35,9 +35,14 @@ let vision = DEFAULT_VISION;
 let learnStickiness = !!DEFAULT_LEARN_STICKINESS;
 let demo = "hyperbolic_ss_ll";
 let stickyClickBound = false;
+let scanClickBound = false;
 let configTimer = null;
 let stickyOptsTimer = null;
+let scanTimer = null;
 let finished = false;
+let lastScanSummary = null;
+let lastScanRows = [];
+const DEFAULT_SCAN = { ...DEFAULT_SCAN_OPTS };
 
 /** Live parameter bags — hyperbolic is independent of the agent demos. */
 const configBags = {
@@ -79,6 +84,19 @@ const btnResetDefaults = document.getElementById("btnResetDefaults");
 const stepHint = document.getElementById("stepHint");
 const chromeSteppable = document.getElementById("chromeSteppable");
 const chromeSticky = document.getElementById("chromeSticky");
+const chromeScan = document.getElementById("chromeScan");
+const scanNStepsEl = document.getElementById("scanNSteps");
+const scanSMinEl = document.getElementById("scanSMin");
+const scanSMaxEl = document.getElementById("scanSMax");
+const scanSStepEl = document.getElementById("scanSStep");
+const scanStrengthMinEl = document.getElementById("scanStrengthMin");
+const scanStrengthMaxEl = document.getElementById("scanStrengthMax");
+const scanStrengthValEl = document.getElementById("scanStrengthVal");
+const btnScanRun = document.getElementById("btnScanRun");
+const btnScanSummary = document.getElementById("btnScanSummary");
+const btnScanSummaryClose = document.getElementById("btnScanSummaryClose");
+const scanSummaryDialog = document.getElementById("scanSummaryDialog");
+const scanSummaryBody = document.getElementById("scanSummaryBody");
 
 function optionalToInput(value) {
   return value == null || value === "" ? "" : String(value);
@@ -126,8 +144,10 @@ function applyDefaultsToForm() {
 function syncChrome() {
   const steppable = STEPPABLE_DEMOS.has(demo);
   const sticky = demo === "sticky";
+  const scan = demo === "scan";
   chromeSteppable.classList.toggle("hidden", !steppable);
   chromeSticky.classList.toggle("hidden", !sticky);
+  chromeScan.classList.toggle("hidden", !scan);
   stickyStepOptsEl.classList.toggle("hidden", demo !== "sticky_step");
   btnStepBack.classList.toggle("hidden", demo !== "hyperbolic_ss_ll");
   if (demo === "sticky_step") {
@@ -249,6 +269,8 @@ async function setDemo(name) {
       });
       if (!res.ok) throw new Error("HTTP " + res.status);
       draw(await res.json());
+    } else if (demo === "scan") {
+      await runScan();
     } else {
       await refresh();
     }
@@ -457,6 +479,21 @@ function fillMeta(el, payload) {
     el.textContent =
       `delays = [${(m.delays || []).join(", ")}]h · LL = ${m.reward_LL} · ` +
       `horizon = ${m.horizon} · discount_factor = ${m.discount_factor}`;
+  } else if (payload.kind === "sticky_scan") {
+    const nLo = m.filter_strength_min ?? m.strength_min;
+    const nHi = m.filter_strength_max ?? m.strength_max;
+    let priorBit = " · click a row for prior Beta(α, β)";
+    if (m.selected_alpha != null && m.selected_beta != null) {
+      priorBit =
+        ` · selected prior α=${m.selected_alpha} β=${m.selected_beta}` +
+        ` N=${m.selected_n ?? "—"}` +
+        ` mean s=${Number(m.selected_s).toFixed(4)}`;
+    }
+    el.textContent =
+      `scan · steps=${m.n_steps ?? "—"} · points=${m.n_points ?? "—"} · ` +
+      `s ∈ [${Number(m.s_min).toFixed(3)}, ${Number(m.s_max).toFixed(3)}] · ` +
+      `view N=α+β ∈ [${nLo ?? "—"}, ${nHi ?? "—"}]` +
+      priorBit;
   } else if (payload.kind === "sticky_step") {
     const av = m.action_values || {};
     const dayBit = m.day != null ? `Day ${m.day} · ` : "";
@@ -603,6 +640,8 @@ function drawInto(divId, payload) {
       divId === "chartSails"
         ? "sticky-sails|" + stickinessEl.value
         : "sticky-graph|" + delayMaxEl.value + "|" + delayStepEl.value;
+  } else if (demo === "scan") {
+    demoKey = "scan|" + JSON.stringify(currentScanOpts());
   }
   const uirevision =
     divId + "|" + JSON.stringify(currentConfig()) + "|" + demoKey;
@@ -663,8 +702,136 @@ async function refreshStickySailsOnly() {
   }
 }
 
+function syncScanStrengthLabel() {
+  let lo = parseInt(scanStrengthMinEl.value, 10);
+  let hi = parseInt(scanStrengthMaxEl.value, 10);
+  if (!Number.isFinite(lo)) lo = DEFAULT_SCAN.strength_min;
+  if (!Number.isFinite(hi)) hi = DEFAULT_SCAN.strength_max;
+  if (lo > hi) {
+    const t = lo;
+    lo = hi;
+    hi = t;
+    scanStrengthMinEl.value = String(lo);
+    scanStrengthMaxEl.value = String(hi);
+  }
+  scanStrengthValEl.textContent = `${lo}–${hi}`;
+}
+
+function syncScanStrengthSliderBounds(payload) {
+  const span = (payload.meta && payload.meta.n_span) || null;
+  if (!span || span.length < 2) return;
+  const lo = Math.max(2, Number(span[0]) || 2);
+  const hi = Math.max(lo, Number(span[1]) || lo);
+  scanStrengthMinEl.min = String(lo);
+  scanStrengthMaxEl.min = String(lo);
+  scanStrengthMinEl.max = String(hi);
+  scanStrengthMaxEl.max = String(hi);
+  let curLo = parseInt(scanStrengthMinEl.value, 10);
+  let curHi = parseInt(scanStrengthMaxEl.value, 10);
+  if (!Number.isFinite(curLo) || curLo < lo) curLo = lo;
+  if (!Number.isFinite(curHi) || curHi > hi) curHi = hi;
+  if (curLo > curHi) {
+    curLo = lo;
+    curHi = hi;
+  }
+  scanStrengthMinEl.value = String(curLo);
+  scanStrengthMaxEl.value = String(curHi);
+  syncScanStrengthLabel();
+}
+
+function currentScanOpts() {
+  syncScanStrengthLabel();
+  return {
+    n_steps: parseInt(scanNStepsEl.value, 10),
+    s_min: parseFloat(scanSMinEl.value),
+    s_max: parseFloat(scanSMaxEl.value),
+    s_step: parseFloat(scanSStepEl.value),
+    strength_min: parseInt(scanStrengthMinEl.value, 10),
+    strength_max: parseInt(scanStrengthMaxEl.value, 10),
+  };
+}
+
+async function runScan({ viewOnly = false, selectedS = undefined } = {}) {
+  metaEl.textContent = viewOnly
+    ? selectedS != null
+      ? "Loading prior…"
+      : "Updating view filter…"
+    : "Scanning…";
+  const body = currentScanOpts();
+  if (viewOnly) body.view_only = true;
+  if (selectedS !== undefined) body.selected_s = selectedS;
+  const res = await apiFetch("/api/scan", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  const payload = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(payload.error || ("HTTP " + res.status));
+  }
+  if (!viewOnly) syncScanStrengthSliderBounds(payload);
+  if (payload.summary) {
+    lastScanSummary = payload.summary;
+    scanSummaryBody.textContent = payload.summary.text || "";
+  }
+  lastScanRows = (payload.meta && payload.meta.rows) || [];
+  draw(payload);
+  ensureScanClickHandler();
+  return payload;
+}
+
+function ensureScanClickHandler() {
+  if (scanClickBound) return;
+  const chart = document.getElementById("chart");
+  chart.on("plotly_click", (ev) => {
+    if (demo !== "scan") return;
+    const pt = ev.points && ev.points[0];
+    if (!pt) return;
+    let rowIndex = null;
+    const cd = pt.customdata;
+    if (Array.isArray(cd) && cd.length >= 5 && Number.isFinite(Number(cd[4]))) {
+      rowIndex = Number(cd[4]);
+    } else if (Array.isArray(pt.pointIndex)) {
+      rowIndex = pt.pointIndex[0];
+    } else if (Number.isFinite(Number(pt.y))) {
+      rowIndex = Math.round(Number(pt.y));
+    }
+    if (rowIndex == null || !lastScanRows[rowIndex]) return;
+    const row = lastScanRows[rowIndex];
+    runScan({ viewOnly: true, selectedS: row.s }).catch((err) => {
+      metaEl.textContent = "Prior panel failed: " + err;
+    });
+  });
+  scanClickBound = true;
+}
+
+function scheduleScan() {
+  if (demo !== "scan") return;
+  clearTimeout(scanTimer);
+  scanTimer = setTimeout(() => {
+    runScan().catch((err) => {
+      metaEl.textContent = "Scan failed: " + err;
+    });
+  }, 80);
+}
+
+function scheduleScanViewFilter() {
+  if (demo !== "scan") return;
+  syncScanStrengthLabel();
+  clearTimeout(scanTimer);
+  scanTimer = setTimeout(() => {
+    runScan({ viewOnly: true }).catch((err) => {
+      metaEl.textContent = "Scan filter failed: " + err;
+    });
+  }, 40);
+}
+
 async function refresh() {
   try {
+    if (demo === "scan") {
+      await runScan();
+      return;
+    }
     if (demo === "sticky") {
       const draft = parseStickinessDraft(stickinessEl.value);
       const s = draft != null ? draft : clampStickiness(stickinessEl.value);
@@ -732,6 +899,43 @@ function scheduleConfig() {
 
 [ssValueEl, ssDelayEl, llValueEl, llDelayEl, lengthEl, horizonEl, discountFactorEl, maxStepsEl].forEach((el) => {
   el.addEventListener("input", scheduleConfig);
+});
+
+[scanNStepsEl, scanSMinEl, scanSMaxEl, scanSStepEl].forEach((el) => {
+  el.addEventListener("change", scheduleScan);
+  el.addEventListener("keydown", (ev) => {
+    if (ev.key === "Enter") {
+      ev.preventDefault();
+      scheduleScan();
+    }
+  });
+});
+scanStrengthMinEl.addEventListener("input", scheduleScanViewFilter);
+scanStrengthMaxEl.addEventListener("input", scheduleScanViewFilter);
+btnScanRun.addEventListener("click", () => {
+  runScan().catch((err) => {
+    metaEl.textContent = "Scan failed: " + err;
+  });
+});
+syncScanStrengthLabel();
+btnScanSummary.addEventListener("click", () => {
+  if (lastScanSummary && lastScanSummary.text) {
+    scanSummaryBody.textContent = lastScanSummary.text;
+  } else {
+    scanSummaryBody.textContent = "Run a scan first.";
+  }
+  if (typeof scanSummaryDialog.showModal === "function") {
+    scanSummaryDialog.showModal();
+  } else {
+    scanSummaryDialog.setAttribute("open", "");
+  }
+});
+btnScanSummaryClose.addEventListener("click", () => {
+  if (typeof scanSummaryDialog.close === "function") {
+    scanSummaryDialog.close();
+  } else {
+    scanSummaryDialog.removeAttribute("open");
+  }
 });
 
 function syncStickyLabels() {
@@ -811,6 +1015,19 @@ btnResetDefaults.addEventListener("click", async () => {
     await pushConfig();
     if (demo === "sticky_step") {
       await pushStickyOptions();
+    } else if (demo === "scan") {
+      scanNStepsEl.value = String(DEFAULT_SCAN.n_steps);
+      scanSMinEl.value = String(DEFAULT_SCAN.s_min);
+      scanSMaxEl.value = String(DEFAULT_SCAN.s_max);
+      scanSStepEl.value = String(DEFAULT_SCAN.s_step);
+      scanStrengthMinEl.min = "2";
+      scanStrengthMaxEl.min = "2";
+      scanStrengthMinEl.max = "500";
+      scanStrengthMaxEl.max = "500";
+      scanStrengthMinEl.value = String(DEFAULT_SCAN.strength_min);
+      scanStrengthMaxEl.value = String(DEFAULT_SCAN.strength_max);
+      syncScanStrengthLabel();
+      await runScan();
     } else if (STEPPABLE_DEMOS.has(demo)) {
       const res = await apiFetch("/api/steppable/reset", {
         method: "POST",

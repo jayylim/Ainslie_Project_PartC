@@ -1,5 +1,6 @@
 /** Port of web_app/plot_series.py — Plotly JSON frame builders. */
 
+import { BayesianStickinessBelief } from "./bayesian_stickiness.js";
 import { stick_p_t } from "./sticky_decisions.js";
 
 export const COLORS = {
@@ -1462,6 +1463,348 @@ export function sticky_curves(agent, environment, state, delay_max, delay_step, 
       horizon,
       discount_factor: agent.discount_factor,
       y_range: [y_lo, y_hi],
+    },
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Sticky learning scan (scan_sticky_learning.js)
+// ---------------------------------------------------------------------------
+
+function _scanEqualRowEdges(n_rows) {
+  const n = Math.max(0, Math.trunc(n_rows));
+  if (!n) return [];
+  const edges = [];
+  for (let i = 0; i <= n; i++) edges.push(i - 0.5);
+  return edges;
+}
+
+function _betaPriorPanelTraces(alpha, beta, mean_s = null) {
+  const belief = new BayesianStickinessBelief(Number(alpha), Number(beta));
+  const [xs, dens] = belief.pdf_grid(251);
+  const y_top = dens.length ? Math.max(...dens) : 1.0;
+  const marker_s = mean_s != null ? Number(mean_s) : belief.mean();
+  const traces = [
+    {
+      type: "scatter",
+      mode: "lines",
+      x: xs,
+      y: dens,
+      line: { color: COLORS.belief, width: 2.0 },
+      fill: "tozeroy",
+      fillcolor: "rgba(44,160,44,0.18)",
+      name: "prior Beta",
+      xaxis: "x2",
+      yaxis: "y2",
+      hovertemplate: "s=%{x:.3f}<br>density=%{y:.3f}<extra></extra>",
+      showlegend: false,
+    },
+    {
+      type: "scatter",
+      mode: "lines",
+      x: [marker_s, marker_s],
+      y: [0.0, y_top ? y_top * 1.15 : 1.0],
+      line: { color: COLORS.perceived_s, width: 1.5 },
+      name: `mean s=${marker_s.toFixed(3)}`,
+      xaxis: "x2",
+      yaxis: "y2",
+      hoverinfo: "skip",
+      showlegend: false,
+    },
+  ];
+  return [traces, y_top, marker_s];
+}
+
+function _resolveSelectedRow(rows, { selected_s = null, selected_index = null } = {}) {
+  if (!rows.length) return [null, null];
+  if (selected_index != null) {
+    const idx = Math.trunc(Number(selected_index));
+    if (Number.isFinite(idx) && idx >= 0 && idx < rows.length) {
+      return [idx, rows[idx]];
+    }
+  }
+  if (selected_s == null) return [null, null];
+  const target = Number(selected_s);
+  if (!Number.isFinite(target)) return [null, null];
+  let best_i = 0;
+  let best_d = Infinity;
+  for (let i = 0; i < rows.length; i++) {
+    const d = Math.abs(Number(rows[i].s) - target);
+    if (d < best_d) {
+      best_d = d;
+      best_i = i;
+    }
+  }
+  if (best_d <= 1e-6) return [best_i, rows[best_i]];
+  return [null, null];
+}
+
+/** Action heatmap + prior Beta panel for a clicked row (equal-height bands). */
+export function scan_frame(
+  rows,
+  {
+    n_steps,
+    strength_min = null,
+    strength_max = null,
+    selected_s = null,
+    selected_index = null,
+  } = {}
+) {
+  let view = rows;
+  if (strength_min != null || strength_max != null) {
+    let lo = strength_min == null ? 0 : Math.trunc(strength_min);
+    let hi = strength_max == null ? 1e9 : Math.trunc(strength_max);
+    if (lo > hi) {
+      const t = lo;
+      lo = hi;
+      hi = t;
+    }
+    view = rows.filter((r) => {
+      const n = Math.trunc(r.n != null ? r.n : r.alpha + r.beta);
+      return lo <= n && n <= hi;
+    });
+  }
+
+  if (!view.length) {
+    return {
+      kind: "sticky_scan",
+      traces: [],
+      layout: {
+        title: { text: "Sticky learning scan (no rows in strength filter)" },
+      },
+      meta: { n_steps, n_points: 0, rows: [] },
+    };
+  }
+
+  const s_vals = view.map((r) => Number(r.s));
+  const n_rows = view.length;
+  const y_idx = Array.from({ length: n_rows }, (_, i) => i);
+  const z = view.map((r) =>
+    r.actions.map((a) => (a === "dessert" ? 0 : 1))
+  );
+  const [sel_i, sel_row] = _resolveSelectedRow(view, {
+    selected_s,
+    selected_index,
+  });
+
+  const custom = view.map((r, i) => {
+    const a = Math.trunc(r.alpha);
+    const b = Math.trunc(r.beta);
+    const n = Math.trunc(r.n != null ? r.n : a + b);
+    const s_i = Number(r.s);
+    return z[i].map((v) => [
+      v === 0 ? "dessert" : "resist",
+      a,
+      b,
+      n,
+      i,
+      s_i,
+    ]);
+  });
+
+  const edges = _scanEqualRowEdges(n_rows);
+  const y_lo = edges[0];
+  const y_hi = edges[edges.length - 1];
+
+  const heatmap = {
+    type: "heatmap",
+    x: Array.from({ length: n_steps }, (_, i) => i + 1),
+    y: y_idx,
+    z,
+    colorscale: [
+      [0.0, COLORS.dessert],
+      [1.0, COLORS.resist],
+    ],
+    zmin: 0,
+    zmax: 1,
+    showscale: false,
+    xgap: 0,
+    ygap: 1,
+    hovertemplate:
+      "day=%{x}<br>s=%{customdata[5]:.3f}<br>" +
+      "α=%{customdata[1]} · β=%{customdata[2]} · N=%{customdata[3]}<br>" +
+      "action=%{customdata[0]}<extra></extra>",
+    customdata: custom,
+    xaxis: "x",
+    yaxis: "y",
+    name: "action",
+  };
+
+  const shapes = edges.map((y_edge) => ({
+    type: "line",
+    xref: "x",
+    yref: "y",
+    x0: 0.5,
+    x1: n_steps + 0.5,
+    y0: y_edge,
+    y1: y_edge,
+    line: { color: "rgba(255,255,255,0.92)", width: 1.25 },
+    layer: "above",
+  }));
+
+  const annotations = [
+    {
+      text: "red=dessert · blue=resist · click a row for prior Beta",
+      xref: "paper",
+      yref: "paper",
+      x: 0.36,
+      y: 1.08,
+      showarrow: false,
+      font: { size: 11, color: "#5c6570" },
+    },
+  ];
+
+  let prior_traces;
+  let y_top;
+  let marker_s;
+  if (sel_row != null) {
+    const alpha = Math.trunc(sel_row.alpha);
+    const beta = Math.trunc(sel_row.beta);
+    const n_prior = Math.trunc(sel_row.n != null ? sel_row.n : alpha + beta);
+    const mean_s = Number(sel_row.s);
+    [prior_traces, y_top, marker_s] = _betaPriorPanelTraces(alpha, beta, mean_s);
+    annotations.push({
+      x: 0.9,
+      y: 1.0,
+      xref: "paper",
+      yref: "paper",
+      text:
+        `Prior Beta(α, β)<br>` +
+        `α=${alpha} · β=${beta} · N=${n_prior}<br>` +
+        `mean s=${mean_s.toFixed(4)}`,
+      showarrow: false,
+      font: { size: 12, color: "#1a1d23" },
+      xanchor: "center",
+      yanchor: "top",
+      align: "center",
+      yshift: -4,
+    });
+    shapes.push({
+      type: "rect",
+      xref: "x",
+      yref: "y",
+      x0: 0.5,
+      x1: n_steps + 0.5,
+      y0: edges[sel_i],
+      y1: edges[sel_i + 1],
+      fillcolor: "rgba(0,0,0,0.10)",
+      line: { color: "rgba(26,29,35,0.85)", width: 1.5 },
+      layer: "above",
+    });
+  } else {
+    prior_traces = [
+      {
+        type: "scatter",
+        mode: "lines",
+        x: [],
+        y: [],
+        xaxis: "x2",
+        yaxis: "y2",
+        showlegend: false,
+        hoverinfo: "skip",
+      },
+    ];
+    y_top = 1.0;
+    marker_s = null;
+    annotations.push({
+      x: 0.9,
+      y: 1.0,
+      xref: "paper",
+      yref: "paper",
+      text: "Click a heatmap row<br>to show prior Beta(α, β)",
+      showarrow: false,
+      font: { size: 12, color: "#1a1d23" },
+      xanchor: "center",
+      yanchor: "top",
+      align: "center",
+      yshift: -4,
+    });
+  }
+
+  const tick_step = n_rows <= 40 ? 1 : Math.max(1, Math.round(n_rows / 30));
+  const tickvals = [];
+  const ticktext = [];
+  for (let i = 0; i < n_rows; i += tick_step) {
+    tickvals.push(y_idx[i]);
+    ticktext.push(s_vals[i].toFixed(3));
+  }
+
+  const row_meta = view.map((r) => ({
+    s: Number(r.s),
+    alpha: Math.trunc(r.alpha),
+    beta: Math.trunc(r.beta),
+    n: Math.trunc(r.n != null ? r.n : r.alpha + r.beta),
+    label: r.label,
+    detail: r.detail || "",
+  }));
+
+  const nFilterBit =
+    strength_min != null || strength_max != null
+      ? ` · N∈[${strength_min},${strength_max}]`
+      : "";
+
+  return {
+    kind: "sticky_scan",
+    traces: [heatmap, ...prior_traces],
+    layout: {
+      title: {
+        text: `Sticky learning scan · steps=${n_steps} · points=${view.length}${nFilterBit}`,
+        font: { size: 15, color: "#1a1d23" },
+      },
+      xaxis: {
+        title: "Decision day",
+        domain: [0.0, 0.66],
+        range: [0.5, n_steps + 0.5],
+        anchor: "y",
+      },
+      yaxis: {
+        title: "Prior mean s",
+        domain: [0.0, 0.92],
+        range: [y_lo, y_hi],
+        tickvals,
+        ticktext,
+        anchor: "x",
+      },
+      xaxis2: {
+        title: "Stickiness s",
+        domain: [0.74, 1.0],
+        range: [0.0, 1.0],
+        anchor: "y2",
+      },
+      yaxis2: {
+        title: "Density",
+        domain: [0.0, 0.92],
+        range: [0.0, y_top ? y_top * 1.15 : 1.0],
+        anchor: "x2",
+      },
+      annotations,
+      shapes,
+      margin: { l: 70, r: 30, t: 78, b: 55 },
+      height: 560,
+      showlegend: false,
+    },
+    meta: {
+      n_steps,
+      n_points: view.length,
+      s_min: s_vals[0],
+      s_max: s_vals[s_vals.length - 1],
+      strength_min: Math.min(
+        ...view.map((r) => Math.trunc(r.n != null ? r.n : r.alpha + r.beta))
+      ),
+      strength_max: Math.max(
+        ...view.map((r) => Math.trunc(r.n != null ? r.n : r.alpha + r.beta))
+      ),
+      labels: view.map((r) => r.label),
+      rows: row_meta,
+      selected_index: sel_i,
+      selected_s: sel_row == null ? null : Number(sel_row.s),
+      selected_alpha: sel_row == null ? null : Math.trunc(sel_row.alpha),
+      selected_beta: sel_row == null ? null : Math.trunc(sel_row.beta),
+      selected_n:
+        sel_row == null
+          ? null
+          : Math.trunc(sel_row.n != null ? sel_row.n : sel_row.alpha + sel_row.beta),
+      selected_mean: marker_s,
     },
   };
 }

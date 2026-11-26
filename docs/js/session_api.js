@@ -19,6 +19,9 @@ import { StickyHypAgent } from "./sticky_agent.js";
 import { TimelineEnvironment } from "./timeline.js";
 import { StickyTimelineEnvironment } from "./sticky_timeline.js";
 import * as plot_series from "./plot_series.js";
+import * as sticky_scan from "./scan_sticky_learning.js";
+
+export const DEFAULT_SCAN_OPTS = { ...sticky_scan.DEFAULT_SCAN_OPTS };
 
 const _decision_interval = envParams.decision_interval;
 const _start = envParams.start;
@@ -50,6 +53,16 @@ const _sticky_session = {
   day: 0,
   finished: false,
   last_info: null,
+};
+
+const _scan_opts = { ...DEFAULT_SCAN_OPTS };
+const _scan_cache = {
+  summary: null,
+  frame: null,
+  rows: null,
+  n_steps: null,
+  n_span: null,
+  selected_s: null,
 };
 
 function parseOptionalInt(value) {
@@ -469,6 +482,145 @@ export function apiSticky({
   );
 }
 
+function scanFrameFromCache(opts) {
+  const rows = _scan_cache.rows || [];
+  const n_steps = Math.trunc(
+    _scan_cache.n_steps || opts.n_steps || DEFAULT_SCAN_OPTS.n_steps
+  );
+  const strength_min = Math.trunc(
+    opts.strength_min ?? DEFAULT_SCAN_OPTS.strength_min
+  );
+  const strength_max = Math.trunc(
+    opts.strength_max ?? DEFAULT_SCAN_OPTS.strength_max
+  );
+  let selected_s =
+    "selected_s" in opts ? opts.selected_s : _scan_cache.selected_s;
+  if (selected_s != null) {
+    selected_s = Number(selected_s);
+    if (!Number.isFinite(selected_s)) selected_s = null;
+  }
+  _scan_cache.selected_s = selected_s;
+  const frame = plot_series.scan_frame(rows, {
+    n_steps,
+    strength_min,
+    strength_max,
+    selected_s,
+  });
+  const summary =
+    _scan_cache.summary ||
+    sticky_scan.q1_q2_summary(rows, { n_steps });
+  frame.ok = true;
+  frame.options = { ...opts };
+  frame.summary = summary;
+  frame.meta.finished = false;
+  frame.meta.n_span = _scan_cache.n_span;
+  frame.meta.filter_strength_min = strength_min;
+  frame.meta.filter_strength_max = strength_max;
+  _scan_cache.frame = frame;
+  return frame;
+}
+
+export function runStickyScan(opts = null, { resimulate = true } = {}) {
+  const next = { ...(_scan_opts || DEFAULT_SCAN_OPTS), ...(opts || {}) };
+  if (!resimulate && _scan_cache.rows != null) {
+    Object.assign(_scan_opts, next);
+    return scanFrameFromCache(next);
+  }
+
+  let targets;
+  try {
+    targets = sticky_scan.unique_s_targets(
+      Number(next.s_min),
+      Number(next.s_max),
+      Number(next.s_step)
+    );
+  } catch (exc) {
+    throw new Error(String(exc.message || exc));
+  }
+
+  const n_steps = Math.trunc(next.n_steps);
+  if (!(n_steps >= 1)) throw new Error("n_steps must be ≥ 1");
+
+  const agent_kwargs = {
+    ...buildAgentParams(_config),
+  };
+  if (agent_kwargs.horizon == null) {
+    agent_kwargs.horizon = 10;
+  }
+  const env_kwargs = { ...buildEnvParams(_config), length: null };
+  const rows = sticky_scan.build_scan(targets, {
+    n_steps,
+    agent_kwargs,
+    env_kwargs,
+  });
+  const n_span = rows.length
+    ? (() => {
+        const strengths = rows.map((r) => sticky_scan.prior_strength(r));
+        return [Math.min(...strengths), Math.max(...strengths)];
+      })()
+    : [2, 200];
+
+  const summary = sticky_scan.q1_q2_summary(rows, { n_steps });
+  Object.assign(_scan_opts, next);
+  _scan_cache.rows = rows;
+  _scan_cache.n_steps = n_steps;
+  _scan_cache.summary = summary;
+  _scan_cache.n_span = n_span;
+  if (!("selected_s" in (opts || {}))) {
+    _scan_cache.selected_s = null;
+    delete _scan_opts.selected_s;
+  }
+  return scanFrameFromCache(_scan_opts);
+}
+
+/** Mirror of GET|POST /api/scan */
+export function apiScan(data = null) {
+  const opts = { ..._scan_opts };
+  let view_only = false;
+  if (data && typeof data === "object") {
+    view_only = Boolean(data.view_only);
+    if ("n_steps" in data && data.n_steps != null) {
+      const n = Math.trunc(Number(data.n_steps));
+      if (!Number.isFinite(n)) return jsonError("n_steps must be an integer");
+      opts.n_steps = n;
+    }
+    for (const key of ["s_min", "s_max", "s_step"]) {
+      if (!(key in data) || data[key] == null) continue;
+      const v = Number(data[key]);
+      if (!Number.isFinite(v)) return jsonError(`${key} must be a number`);
+      opts[key] = v;
+    }
+    for (const key of ["strength_min", "strength_max"]) {
+      if (!(key in data) || data[key] == null) continue;
+      const v = Math.trunc(Number(data[key]));
+      if (!Number.isFinite(v)) return jsonError(`${key} must be an integer`);
+      opts[key] = v;
+    }
+    if ("selected_s" in data) {
+      if (data.selected_s == null || data.selected_s === "") {
+        opts.selected_s = null;
+      } else {
+        const v = Number(data.selected_s);
+        if (!Number.isFinite(v)) return jsonError("selected_s must be a number");
+        opts.selected_s = v;
+      }
+      if (
+        !view_only &&
+        !["n_steps", "s_min", "s_max", "s_step"].some((k) => k in data) &&
+        _scan_cache.rows != null
+      ) {
+        view_only = true;
+      }
+    }
+  }
+  try {
+    const frame = runStickyScan(opts, { resimulate: !view_only });
+    return jsonOk(frame);
+  } catch (exc) {
+    return jsonError(String(exc.message || exc));
+  }
+}
+
 /** Fetch-compatible helper used by app.js */
 export async function apiFetch(path, options = {}) {
   const method = (options.method || "GET").toUpperCase();
@@ -505,6 +657,8 @@ export async function apiFetch(path, options = {}) {
       delay_max: Number(url.searchParams.get("delay_max") ?? DEFAULT_DELAY_MAX),
       delay_step: Number(url.searchParams.get("delay_step") ?? DEFAULT_DELAY_STEP),
     });
+  } else if (pathname === "/api/scan") {
+    result = apiScan(method === "POST" ? data || {} : null);
   } else {
     result = jsonError(`Unknown path: ${pathname}`, null, 404);
   }
