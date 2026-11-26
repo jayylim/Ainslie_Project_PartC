@@ -2,10 +2,11 @@
 Unified interactive web app for the visual demos.
 
 Shared top-level params (rewards, delays, env length, horizon, vision).
-Three sections:
+Four sections:
   - Steppable: visualizing_main | hyperbolic_curve | hyperbolic_ss_ll | sticky_step
   - Non-steppable: visualise_sails | aggregate_sail
   - Sticky: sticky_graph + visualise_sticky_sails (stacked; click current curve sets s)
+  - Scan: sticky learning regime scan over prior mean s (tunable n_steps / s grid)
 
 Math lives in Python (core agent/env + plot_series); the browser draws with Plotly.
 
@@ -41,6 +42,8 @@ from main import (
     max_steps as default_max_steps,
 )
 import plot_series
+from prior_from_mean import integers_for_mean
+import scan_sticky_learning as sticky_scan
 
 # === Defaults (agent from agent_configs; env/max_steps / sticky prior from main.py) ===
 DEFAULT_DELAY_MAX = 24
@@ -50,6 +53,16 @@ DEFAULT_LEARN_STICKINESS = sticky_params["learn_stickiness"]
 DEFAULT_PRIOR_ALPHA = float(sticky_env_params["prior_alpha"])
 DEFAULT_PRIOR_BETA = float(sticky_env_params["prior_beta"])
 DEFAULT_PRIOR_MEAN = DEFAULT_PRIOR_ALPHA / (DEFAULT_PRIOR_ALPHA + DEFAULT_PRIOR_BETA)
+DEFAULT_SCAN_OPTS = sticky_scan.DEFAULT_SCAN_OPTS
+_scan_opts = dict(DEFAULT_SCAN_OPTS)
+_scan_cache = {
+    "summary": None,
+    "frame": None,
+    "rows": None,
+    "n_steps": None,
+    "n_span": None,  # (min_N, max_N) over full unscanned filter
+    "selected_s": None,  # prior mean of clicked heatmap row (view panel)
+}
 
 app = Flask(__name__)
 
@@ -387,7 +400,7 @@ def api_steppable_step():
     visualizing_main: step the env one day (same as matplotlib click loop).
     hyperbolic_curve: advance elapsed by 1h toward delivery (agent stays at day 0).
     hyperbolic_ss_ll: same approach for SS + LL (SS delay = ¾ LL; preference highlight).
-    sticky_step: intent → StickyTimelineEnvironment.step (realize intent + belief).
+    sticky_step: intent → StickyTimelineEnvironment.step (belief from stick/switch).
     """
     demo = _steppable_demo()
 
@@ -507,28 +520,50 @@ def api_sticky_options():
     Update sticky_step options.
 
     learn_stickiness: Off → fixed preset perceived_s (= prior mean);
-      On → foresight tracks Beta posterior mean from the agent's stick/switch choices.
+      On → foresight tracks Beta posterior mean from stick/switch history.
     prior_alpha / prior_beta: Beta prior (defaults from main.sticky_env_params).
       Changing either rebuilds the sticky session (belief reset).
+    target_mean: optional s ∈ (0, 1); sets α, β to the lowest positive integers
+      with α/(α+β) matching that mean (overrides prior_alpha / prior_beta).
     """
     data = request.get_json(force=True, silent=True) or {}
     rebuild_needed = False
+    from_mean = None
 
     if "learn_stickiness" in data:
         _sticky_step_opts["learn_stickiness"] = bool(data["learn_stickiness"])
 
-    for key in ("prior_alpha", "prior_beta"):
-        if key not in data:
-            continue
+    if "target_mean" in data and data["target_mean"] is not None:
         try:
-            val = float(data[key])
-        except (TypeError, ValueError):
-            return jsonify({"ok": False, "error": f"{key} must be a number"}), 400
-        if val != val or val <= 0.0:
-            return jsonify({"ok": False, "error": f"{key} must be positive"}), 400
-        if abs(val - float(_sticky_step_opts[key])) > 1e-12:
-            _sticky_step_opts[key] = val
+            alpha, beta, achieved = integers_for_mean(data["target_mean"])
+        except ValueError as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 400
+        if (
+            abs(alpha - float(_sticky_step_opts["prior_alpha"])) > 1e-12
+            or abs(beta - float(_sticky_step_opts["prior_beta"])) > 1e-12
+        ):
             rebuild_needed = True
+        _sticky_step_opts["prior_alpha"] = float(alpha)
+        _sticky_step_opts["prior_beta"] = float(beta)
+        from_mean = {
+            "target_mean": float(data["target_mean"]),
+            "achieved_mean": achieved,
+            "prior_alpha": alpha,
+            "prior_beta": beta,
+        }
+    else:
+        for key in ("prior_alpha", "prior_beta"):
+            if key not in data:
+                continue
+            try:
+                val = float(data[key])
+            except (TypeError, ValueError):
+                return jsonify({"ok": False, "error": f"{key} must be a number"}), 400
+            if val != val or val <= 0.0:
+                return jsonify({"ok": False, "error": f"{key} must be positive"}), 400
+            if abs(val - float(_sticky_step_opts[key])) > 1e-12:
+                _sticky_step_opts[key] = val
+                rebuild_needed = True
 
     if rebuild_needed or _sticky_session["environment"] is None:
         rebuild_sticky_session()
@@ -541,6 +576,154 @@ def api_sticky_options():
     frame = current_sticky_step_frame()
     frame["ok"] = True
     frame["options"] = copy.deepcopy(_sticky_step_opts)
+    if from_mean is not None:
+        frame["from_mean"] = from_mean
+    return jsonify(frame)
+
+
+def _scan_frame_from_cache(opts):
+    """Rebuild Plotly frame from cached rows using strength view filter only."""
+    rows = _scan_cache.get("rows") or []
+    n_steps = int(_scan_cache.get("n_steps") or opts.get("n_steps") or 1)
+    strength_min = int(opts.get("strength_min", DEFAULT_SCAN_OPTS["strength_min"]))
+    strength_max = int(opts.get("strength_max", DEFAULT_SCAN_OPTS["strength_max"]))
+    selected_s = opts.get("selected_s", _scan_cache.get("selected_s"))
+    if selected_s is not None:
+        try:
+            selected_s = float(selected_s)
+        except (TypeError, ValueError):
+            selected_s = None
+    _scan_cache["selected_s"] = selected_s
+    frame = plot_series.scan_frame(
+        rows,
+        n_steps=n_steps,
+        strength_min=strength_min,
+        strength_max=strength_max,
+        selected_s=selected_s,
+    )
+    summary = _scan_cache.get("summary") or sticky_scan.q1_q2_summary(
+        rows, n_steps=n_steps
+    )
+    frame["ok"] = True
+    frame["options"] = dict(opts)
+    frame["summary"] = summary
+    frame["meta"]["finished"] = False
+    frame["meta"]["n_span"] = _scan_cache.get("n_span")
+    frame["meta"]["filter_strength_min"] = strength_min
+    frame["meta"]["filter_strength_max"] = strength_max
+    _scan_cache["frame"] = frame
+    return frame
+
+
+def run_sticky_scan(opts=None, *, resimulate=True):
+    """
+    Run scan_sticky_learning with live main config + scan opts.
+
+    resimulate=True  → rebuild trajectories (s grid / n_steps / rewards changed)
+    resimulate=False → only re-apply strength_min/max view filter on cached rows
+    """
+    opts = dict(_scan_opts if opts is None else opts)
+    if not resimulate and _scan_cache.get("rows") is not None:
+        _scan_opts.update(opts)
+        return _scan_frame_from_cache(opts)
+
+    try:
+        targets = sticky_scan.unique_s_targets(
+            float(opts["s_min"]), float(opts["s_max"]), float(opts["s_step"])
+        )
+    except ValueError as exc:
+        raise ValueError(str(exc)) from exc
+
+    n_steps = int(opts["n_steps"])
+    if n_steps < 1:
+        raise ValueError("n_steps must be ≥ 1")
+
+    agent_kwargs = {
+        "discount_factor": float(_config["discount_factor"]),
+        "vision": _config["vision"],
+        "horizon": _parse_optional_int(_config.get("horizon")),
+    }
+    if agent_kwargs["horizon"] is None:
+        # Infinite timeline needs a finite foresight horizon for sticky scan.
+        agent_kwargs["horizon"] = sticky_params.get("horizon") or 10
+
+    env_kwargs = {**_build_env_params(_config), "length": None}
+    rows = sticky_scan.build_scan(
+        targets,
+        n_steps=n_steps,
+        agent_kwargs=agent_kwargs,
+        env_kwargs=env_kwargs,
+    )
+    if rows:
+        strengths = [sticky_scan.prior_strength(r) for r in rows]
+        n_span = [min(strengths), max(strengths)]
+    else:
+        n_span = [2, 200]
+
+    summary = sticky_scan.q1_q2_summary(rows, n_steps=n_steps)
+    _scan_opts.update(opts)
+    _scan_cache["rows"] = rows
+    _scan_cache["n_steps"] = n_steps
+    _scan_cache["summary"] = summary
+    _scan_cache["n_span"] = n_span
+    # Fresh grid: drop previous row selection unless the client re-sent one.
+    if "selected_s" not in opts:
+        _scan_cache["selected_s"] = None
+        _scan_opts.pop("selected_s", None)
+    return _scan_frame_from_cache(_scan_opts)
+
+
+@app.route("/api/scan", methods=["GET", "POST"])
+def api_scan():
+    """
+    Sticky learning scan over prior mean s (scan_sticky_learning.py).
+
+    POST body may include n_steps, s_min, s_max, s_step (resimulate),
+    strength_min / strength_max (view filter on N=α+β only), and
+    selected_s (clicked row prior mean → right-panel Beta PDF).
+    Pass view_only=true to re-filter / reselect without re-running trajectories.
+    """
+    opts = dict(_scan_opts)
+    view_only = False
+    if request.method == "POST":
+        data = request.get_json(force=True, silent=True) or {}
+        view_only = bool(data.get("view_only"))
+        if "n_steps" in data and data["n_steps"] is not None:
+            try:
+                opts["n_steps"] = int(data["n_steps"])
+            except (TypeError, ValueError):
+                return jsonify({"ok": False, "error": "n_steps must be an integer"}), 400
+        for key in ("s_min", "s_max", "s_step"):
+            if key in data and data[key] is not None:
+                try:
+                    opts[key] = float(data[key])
+                except (TypeError, ValueError):
+                    return jsonify({"ok": False, "error": f"{key} must be a number"}), 400
+        for key in ("strength_min", "strength_max"):
+            if key in data and data[key] is not None:
+                try:
+                    opts[key] = int(data[key])
+                except (TypeError, ValueError):
+                    return jsonify({"ok": False, "error": f"{key} must be an integer"}), 400
+        if "selected_s" in data:
+            if data["selected_s"] is None or data["selected_s"] == "":
+                opts["selected_s"] = None
+            else:
+                try:
+                    opts["selected_s"] = float(data["selected_s"])
+                except (TypeError, ValueError):
+                    return jsonify({"ok": False, "error": "selected_s must be a number"}), 400
+            # Row select alone should not resimulate when a cache exists.
+            if (
+                not view_only
+                and not any(k in data for k in ("n_steps", "s_min", "s_max", "s_step"))
+                and _scan_cache.get("rows") is not None
+            ):
+                view_only = True
+    try:
+        frame = run_sticky_scan(opts, resimulate=not view_only)
+    except ValueError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
     return jsonify(frame)
 
 
@@ -612,6 +795,12 @@ def index():
         default_prior_alpha=DEFAULT_PRIOR_ALPHA,
         default_prior_beta=DEFAULT_PRIOR_BETA,
         default_prior_mean=DEFAULT_PRIOR_MEAN,
+        default_scan_n_steps=DEFAULT_SCAN_OPTS["n_steps"],
+        default_scan_s_min=DEFAULT_SCAN_OPTS["s_min"],
+        default_scan_s_max=DEFAULT_SCAN_OPTS["s_max"],
+        default_scan_s_step=DEFAULT_SCAN_OPTS["s_step"],
+        default_scan_strength_min=DEFAULT_SCAN_OPTS["strength_min"],
+        default_scan_strength_max=DEFAULT_SCAN_OPTS["strength_max"],
     )
 
 
@@ -764,6 +953,7 @@ PAGE = r"""
   }
   .tabs {
     display: flex;
+    flex-wrap: wrap;
     gap: 0.4rem;
     margin-bottom: 0.85rem;
     font-family: ui-sans-serif, system-ui, sans-serif;
@@ -781,6 +971,43 @@ PAGE = r"""
     background: var(--ink);
     border-color: var(--ink);
     color: #fff;
+  }
+  dialog#scanSummaryDialog {
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 0;
+    max-width: min(560px, 92vw);
+    width: 100%;
+    box-shadow: 0 12px 40px rgba(26, 29, 35, 0.18);
+  }
+  dialog#scanSummaryDialog::backdrop {
+    background: rgba(26, 29, 35, 0.35);
+  }
+  dialog#scanSummaryDialog .dialog-body {
+    padding: 1rem 1.15rem 1.1rem;
+  }
+  dialog#scanSummaryDialog h3 {
+    margin: 0 0 0.65rem;
+    font-size: 1.05rem;
+  }
+  dialog#scanSummaryDialog pre {
+    margin: 0 0 0.9rem;
+    white-space: pre-wrap;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 0.82rem;
+    line-height: 1.45;
+    color: var(--ink);
+    background: #f4f6f8;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 0.75rem 0.85rem;
+    max-height: min(55vh, 420px);
+    overflow: auto;
+  }
+  dialog#scanSummaryDialog .dialog-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.5rem;
   }
   .chrome {
     display: flex;
@@ -917,6 +1144,7 @@ PAGE = r"""
     <button type="button" data-section="steppable" class="active">Steppable</button>
     <button type="button" data-section="nonsteppable">Non-steppable</button>
     <button type="button" data-section="sticky">Sticky</button>
+    <button type="button" data-section="scan">Scan</button>
   </div>
 
   <div class="panel">
@@ -933,6 +1161,14 @@ PAGE = r"""
       <button type="button" class="secondary" id="btnReset">Reset</button>
       <button type="button" class="secondary hidden" id="btnStepBack">Step back</button>
       <button type="button" class="action" id="btnStep">Step</button>
+      <label style="min-width:96px;" title="How many unit steps one click runs (each day is still computed separately)">
+        Days / click
+        <input type="number" id="stepBurst" value="1" min="1" max="200" step="1"/>
+      </label>
+      <label style="min-width:110px;" title="Pause between unit steps while a multi-day click plays out">
+        Delay (ms)
+        <input type="number" id="stepDelayMs" value="120" min="0" max="5000" step="10"/>
+      </label>
       <span id="stepHint">Step advances the selected demo</span>
       <div id="stickyStepOpts" class="hidden">
         <label>Learn stickiness
@@ -947,6 +1183,11 @@ PAGE = r"""
         <label style="min-width:110px;">Prior β
           <input type="number" id="stickyStepPriorBeta" value="{{ default_prior_beta }}" min="0.01" step="0.1"/>
         </label>
+        <label style="min-width:130px;" title="Sets α, β to the lowest positive integers with mean s">
+          Prior from s
+          <input type="number" id="stickyStepTargetMean" value="{{ default_prior_mean }}" min="0.01" max="0.99" step="0.01"/>
+        </label>
+        <button type="button" class="secondary" id="btnStickyFromMean" style="align-self:flex-end;">Set α, β</button>
         <span id="stickyStepPriorMean" style="align-self:flex-end;padding-bottom:0.35rem;color:var(--muted);font-size:0.85rem;">
           fixed s=α/(α+β)={{ "%.3f"|format(default_prior_mean) }}
         </span>
@@ -974,6 +1215,38 @@ PAGE = r"""
         <input type="number" id="stickiness" value="{{ default_stickiness }}" min="0" max="1" step="0.01"/>
       </label>
     </div>
+    <div id="chromeScan" class="chrome hidden">
+      <label style="min-width:100px;" title="Decision days simulated per prior s">
+        n_steps
+        <input type="number" id="scanNSteps" value="{{ default_scan_n_steps }}" min="1" step="1"/>
+      </label>
+      <label style="min-width:100px;">
+        s min
+        <input type="number" id="scanSMin" value="{{ default_scan_s_min }}" min="0.01" max="0.98" step="0.01"/>
+      </label>
+      <label style="min-width:100px;">
+        s max
+        <input type="number" id="scanSMax" value="{{ default_scan_s_max }}" min="0.02" max="0.99" step="0.01"/>
+      </label>
+      <label style="min-width:100px;">
+        s step
+        <input type="number" id="scanSStep" value="{{ default_scan_s_step }}" min="0.001" max="0.5" step="0.01"/>
+      </label>
+      <button type="button" class="action" id="btnScanRun">Run scan</button>
+      <button type="button" class="secondary" id="btnScanSummary">Q1 / Q2 summary</button>
+      <div class="range-pair" style="min-width:220px;" title="View filter only: hide priors whose integer N=α+β is outside this range">
+        <span>Prior strength N=α+β: <strong id="scanStrengthVal">{{ default_scan_strength_min }}–{{ default_scan_strength_max }}</strong></span>
+        <label style="flex-direction:row;align-items:center;gap:0.4rem;min-width:0;">
+          min
+          <input type="range" id="scanStrengthMin" min="2" max="500" step="1" value="{{ default_scan_strength_min }}"/>
+        </label>
+        <label style="flex-direction:row;align-items:center;gap:0.4rem;min-width:0;">
+          max
+          <input type="range" id="scanStrengthMax" min="2" max="500" step="1" value="{{ default_scan_strength_max }}"/>
+        </label>
+      </div>
+      <span id="scanHint" style="color:var(--muted);">Uses top reward / k / horizon; strength sliders filter the plot only; click a row for prior Beta(α, β)</span>
+    </div>
 
     <div id="singleView">
       <div id="meta" class="meta-line"></div>
@@ -993,6 +1266,16 @@ PAGE = r"""
     </div>
   </div>
 </div>
+
+<dialog id="scanSummaryDialog">
+  <div class="dialog-body">
+    <h3>Q1 / Q2 summary</h3>
+    <pre id="scanSummaryBody">Run a scan first.</pre>
+    <div class="dialog-actions">
+      <button type="button" class="secondary" id="btnScanSummaryClose">Close</button>
+    </div>
+  </div>
+</dialog>
 
 <script>
 const DEFAULT_CONFIG = {
@@ -1014,6 +1297,14 @@ const DEFAULT_LEARN_STICKINESS = {{ default_learn_stickiness|tojson }};
 const DEFAULT_PRIOR_ALPHA = {{ default_prior_alpha|tojson }};
 const DEFAULT_PRIOR_BETA = {{ default_prior_beta|tojson }};
 const DEFAULT_PRIOR_MEAN = {{ default_prior_mean|tojson }};
+const DEFAULT_SCAN = {
+  n_steps: {{ default_scan_n_steps|tojson }},
+  s_min: {{ default_scan_s_min|tojson }},
+  s_max: {{ default_scan_s_max|tojson }},
+  s_step: {{ default_scan_s_step|tojson }},
+  strength_min: {{ default_scan_strength_min|tojson }},
+  strength_max: {{ default_scan_strength_max|tojson }},
+};
 
 let vision = DEFAULT_VISION;
 let learnStickiness = !!DEFAULT_LEARN_STICKINESS;
@@ -1021,7 +1312,11 @@ let section = "steppable";
 let stickyClickBound = false;
 let configTimer = null;
 let stickyOptsTimer = null;
+let scanTimer = null;
 let finished = false;
+let lastScanSummary = null;
+let lastScanRows = [];
+let scanClickBound = false;
 
 const metaEl = document.getElementById("meta");
 const metaGraphEl = document.getElementById("metaGraph");
@@ -1043,7 +1338,9 @@ const learnStickinessOff = document.getElementById("learnStickinessOff");
 const learnStickinessOn = document.getElementById("learnStickinessOn");
 const stickyStepPriorAlphaEl = document.getElementById("stickyStepPriorAlpha");
 const stickyStepPriorBetaEl = document.getElementById("stickyStepPriorBeta");
+const stickyStepTargetMeanEl = document.getElementById("stickyStepTargetMean");
 const stickyStepPriorMeanEl = document.getElementById("stickyStepPriorMean");
+const btnStickyFromMean = document.getElementById("btnStickyFromMean");
 const demoSelect = document.getElementById("demoSelect");
 const steppableDemoSelect = document.getElementById("steppableDemoSelect");
 const delayMaxEl = document.getElementById("delayMax");
@@ -1054,6 +1351,22 @@ const btnStepBack = document.getElementById("btnStepBack");
 const btnReset = document.getElementById("btnReset");
 const btnResetDefaults = document.getElementById("btnResetDefaults");
 const stepHint = document.getElementById("stepHint");
+const stepBurstEl = document.getElementById("stepBurst");
+const stepDelayMsEl = document.getElementById("stepDelayMs");
+const scanNStepsEl = document.getElementById("scanNSteps");
+const scanSMinEl = document.getElementById("scanSMin");
+const scanSMaxEl = document.getElementById("scanSMax");
+const scanSStepEl = document.getElementById("scanSStep");
+const scanStrengthMinEl = document.getElementById("scanStrengthMin");
+const scanStrengthMaxEl = document.getElementById("scanStrengthMax");
+const scanStrengthValEl = document.getElementById("scanStrengthVal");
+const btnScanRun = document.getElementById("btnScanRun");
+const btnScanSummary = document.getElementById("btnScanSummary");
+const btnScanSummaryClose = document.getElementById("btnScanSummaryClose");
+const scanSummaryDialog = document.getElementById("scanSummaryDialog");
+const scanSummaryBody = document.getElementById("scanSummaryBody");
+const chromeScanEl = document.getElementById("chromeScan");
+let stepping = false;
 
 function optionalToInput(value) {
   return value == null || value === "" ? "" : String(value);
@@ -1072,7 +1385,19 @@ function applyDefaultsToForm() {
   learnStickiness = !!DEFAULT_LEARN_STICKINESS;
   stickyStepPriorAlphaEl.value = String(DEFAULT_PRIOR_ALPHA);
   stickyStepPriorBetaEl.value = String(DEFAULT_PRIOR_BETA);
+  stickyStepTargetMeanEl.value = String(DEFAULT_PRIOR_MEAN);
   syncStickyPriorMeanLabel(DEFAULT_PRIOR_MEAN);
+  scanNStepsEl.value = String(DEFAULT_SCAN.n_steps);
+  scanSMinEl.value = String(DEFAULT_SCAN.s_min);
+  scanSMaxEl.value = String(DEFAULT_SCAN.s_max);
+  scanSStepEl.value = String(DEFAULT_SCAN.s_step);
+  scanStrengthMinEl.min = "2";
+  scanStrengthMaxEl.min = "2";
+  scanStrengthMinEl.max = "500";
+  scanStrengthMaxEl.max = "500";
+  scanStrengthMinEl.value = String(DEFAULT_SCAN.strength_min);
+  scanStrengthMaxEl.value = String(DEFAULT_SCAN.strength_max);
+  syncScanStrengthLabel();
   syncVisionButtons();
   syncLearnStickinessButtons();
   clearConfigError();
@@ -1088,13 +1413,13 @@ function syncStepHint() {
   btnStepBack.classList.toggle("hidden", demo !== "hyperbolic_ss_ll");
   if (demo === "visualizing_main") {
     stepHint.textContent =
-      "Step advances one decision day in the environment";
+      "Each unit step is one decision day; Days/click runs several with Delay between frames";
     } else if (demo === "sticky_step") {
     stepHint.textContent =
-      "Step advances one decision day; intent is realized and belief updates from stick/switch choices";
+      "Each unit step is one decision day; Days/click runs several with Delay between frames";
   } else {
     stepHint.textContent =
-      "Step moves the reward one hour closer";
+      "Each unit step moves the reward one hour closer; Days/click runs several with Delay between frames";
   }
 }
 syncStepHint();
@@ -1166,8 +1491,137 @@ function setSection(name) {
   document.getElementById("chromeSteppable").classList.toggle("hidden", name !== "steppable");
   document.getElementById("chromeNon").classList.toggle("hidden", name !== "nonsteppable");
   document.getElementById("chromeSticky").classList.toggle("hidden", name !== "sticky");
+  chromeScanEl.classList.toggle("hidden", name !== "scan");
   syncViewPanes();
   refresh();
+}
+
+function syncScanStrengthLabel() {
+  let lo = parseInt(scanStrengthMinEl.value, 10);
+  let hi = parseInt(scanStrengthMaxEl.value, 10);
+  if (!Number.isFinite(lo)) lo = DEFAULT_SCAN.strength_min;
+  if (!Number.isFinite(hi)) hi = DEFAULT_SCAN.strength_max;
+  if (lo > hi) {
+    const t = lo;
+    lo = hi;
+    hi = t;
+    scanStrengthMinEl.value = String(lo);
+    scanStrengthMaxEl.value = String(hi);
+  }
+  scanStrengthValEl.textContent = `${lo}–${hi}`;
+}
+
+function syncScanStrengthSliderBounds(payload) {
+  const span = (payload.meta && payload.meta.n_span) || null;
+  if (!span || span.length < 2) return;
+  const lo = Math.max(2, Number(span[0]) || 2);
+  const hi = Math.max(lo, Number(span[1]) || lo);
+  scanStrengthMinEl.min = String(lo);
+  scanStrengthMaxEl.min = String(lo);
+  scanStrengthMinEl.max = String(hi);
+  scanStrengthMaxEl.max = String(hi);
+  let curLo = parseInt(scanStrengthMinEl.value, 10);
+  let curHi = parseInt(scanStrengthMaxEl.value, 10);
+  if (!Number.isFinite(curLo) || curLo < lo) curLo = lo;
+  if (!Number.isFinite(curHi) || curHi > hi) curHi = hi;
+  if (curLo > curHi) {
+    curLo = lo;
+    curHi = hi;
+  }
+  scanStrengthMinEl.value = String(curLo);
+  scanStrengthMaxEl.value = String(curHi);
+  syncScanStrengthLabel();
+}
+
+function currentScanOpts() {
+  syncScanStrengthLabel();
+  return {
+    n_steps: parseInt(scanNStepsEl.value, 10),
+    s_min: parseFloat(scanSMinEl.value),
+    s_max: parseFloat(scanSMaxEl.value),
+    s_step: parseFloat(scanSStepEl.value),
+    strength_min: parseInt(scanStrengthMinEl.value, 10),
+    strength_max: parseInt(scanStrengthMaxEl.value, 10),
+  };
+}
+
+async function runScan({ viewOnly = false, selectedS = undefined } = {}) {
+  metaEl.textContent = viewOnly
+    ? selectedS != null
+      ? "Loading prior…"
+      : "Updating view filter…"
+    : "Scanning…";
+  const body = currentScanOpts();
+  if (viewOnly) body.view_only = true;
+  if (selectedS !== undefined) body.selected_s = selectedS;
+  const res = await fetch("/api/scan", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  const payload = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(payload.error || ("HTTP " + res.status));
+  }
+  if (!viewOnly) {
+    syncScanStrengthSliderBounds(payload);
+  }
+  if (payload.summary) {
+    lastScanSummary = payload.summary;
+    scanSummaryBody.textContent = payload.summary.text || "";
+  }
+  lastScanRows = (payload.meta && payload.meta.rows) || [];
+  draw(payload);
+  ensureScanClickHandler();
+  return payload;
+}
+
+function ensureScanClickHandler() {
+  if (scanClickBound) return;
+  const chart = document.getElementById("chart");
+  chart.on("plotly_click", (ev) => {
+    if (section !== "scan") return;
+    const pt = ev.points && ev.points[0];
+    if (!pt) return;
+    // Heatmap customdata: [action, alpha, beta, N, row_index, s]
+    // y-axis is equal-height row index (0..n-1), not prior mean s.
+    let rowIndex = null;
+    const cd = pt.customdata;
+    if (Array.isArray(cd) && cd.length >= 5 && Number.isFinite(Number(cd[4]))) {
+      rowIndex = Number(cd[4]);
+    } else if (Array.isArray(pt.pointIndex)) {
+      rowIndex = pt.pointIndex[0];
+    } else if (Number.isFinite(Number(pt.y))) {
+      rowIndex = Math.round(Number(pt.y));
+    }
+    if (rowIndex == null || !lastScanRows[rowIndex]) return;
+    const row = lastScanRows[rowIndex];
+    runScan({ viewOnly: true, selectedS: row.s }).catch((err) => {
+      metaEl.textContent = "Prior panel failed: " + err;
+    });
+  });
+  scanClickBound = true;
+}
+
+function scheduleScan() {
+  if (section !== "scan") return;
+  clearTimeout(scanTimer);
+  scanTimer = setTimeout(() => {
+    runScan().catch((err) => {
+      metaEl.textContent = "Scan failed: " + err;
+    });
+  }, 80);
+}
+
+function scheduleScanViewFilter() {
+  if (section !== "scan") return;
+  syncScanStrengthLabel();
+  clearTimeout(scanTimer);
+  scanTimer = setTimeout(() => {
+    runScan({ viewOnly: true }).catch((err) => {
+      metaEl.textContent = "Scan filter failed: " + err;
+    });
+  }, 40);
 }
 
 document.querySelectorAll(".tabs button").forEach((b) => {
@@ -1225,35 +1679,76 @@ function syncStickyPriorMeanLabel(mean) {
   stickyStepPriorMeanEl.textContent = `fixed s=α/(α+β)=${text}`;
 }
 
-async function pushStickyOptions({ normalizeInputs = false } = {}) {
-  let prior_alpha = parsePositiveDraft(stickyStepPriorAlphaEl.value);
-  let prior_beta = parsePositiveDraft(stickyStepPriorBetaEl.value);
-  if (normalizeInputs) {
-    prior_alpha = clampPositive(stickyStepPriorAlphaEl.value, DEFAULT_PRIOR_ALPHA);
-    prior_beta = clampPositive(stickyStepPriorBetaEl.value, DEFAULT_PRIOR_BETA);
-    stickyStepPriorAlphaEl.value = String(prior_alpha);
-    stickyStepPriorBetaEl.value = String(prior_beta);
-  } else if (prior_alpha == null || prior_beta == null) {
-    // Still typing a decimal — wait for a complete value.
-    return null;
+function syncStickyTargetMeanFromPriors(alpha, beta) {
+  const a = Number(alpha);
+  const b = Number(beta);
+  if (!Number.isFinite(a) || !Number.isFinite(b) || a + b <= 0) return;
+  stickyStepTargetMeanEl.value = String(Math.round((a / (a + b)) * 100) / 100);
+}
+
+async function pushStickyOptions({ normalizeInputs = false, targetMean = null } = {}) {
+  const body = { learn_stickiness: learnStickiness };
+
+  if (targetMean != null) {
+    body.target_mean = targetMean;
+  } else {
+    let prior_alpha = parsePositiveDraft(stickyStepPriorAlphaEl.value);
+    let prior_beta = parsePositiveDraft(stickyStepPriorBetaEl.value);
+    if (normalizeInputs) {
+      prior_alpha = clampPositive(stickyStepPriorAlphaEl.value, DEFAULT_PRIOR_ALPHA);
+      prior_beta = clampPositive(stickyStepPriorBetaEl.value, DEFAULT_PRIOR_BETA);
+      stickyStepPriorAlphaEl.value = String(prior_alpha);
+      stickyStepPriorBetaEl.value = String(prior_beta);
+    } else if (prior_alpha == null || prior_beta == null) {
+      // Still typing a decimal — wait for a complete value.
+      return null;
+    }
+    syncStickyPriorMeanLabel(prior_alpha / (prior_alpha + prior_beta));
+    body.prior_alpha = prior_alpha;
+    body.prior_beta = prior_beta;
   }
-  syncStickyPriorMeanLabel(prior_alpha / (prior_alpha + prior_beta));
+
   const res = await fetch("/api/steppable/sticky_options", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      learn_stickiness: learnStickiness,
-      prior_alpha,
-      prior_beta,
-    }),
+    body: JSON.stringify(body),
   });
-  if (!res.ok) throw new Error("HTTP " + res.status);
-  const payload = await res.json();
-  if (payload.options && payload.options.perceived_s != null) {
-    syncStickyPriorMeanLabel(payload.options.perceived_s);
+  const payload = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(payload.error || ("HTTP " + res.status));
+  }
+  if (payload.options) {
+    if (payload.options.prior_alpha != null) {
+      stickyStepPriorAlphaEl.value = String(payload.options.prior_alpha);
+    }
+    if (payload.options.prior_beta != null) {
+      stickyStepPriorBetaEl.value = String(payload.options.prior_beta);
+    }
+    if (payload.options.perceived_s != null) {
+      syncStickyPriorMeanLabel(payload.options.perceived_s);
+      if (targetMean != null) {
+        stickyStepTargetMeanEl.value = String(
+          Math.round(Number(payload.options.perceived_s) * 100) / 100
+        );
+      } else {
+        syncStickyTargetMeanFromPriors(
+          payload.options.prior_alpha,
+          payload.options.prior_beta
+        );
+      }
+    }
   }
   draw(payload);
   return payload;
+}
+
+async function applyStickyFromMean() {
+  let s = Number(stickyStepTargetMeanEl.value);
+  if (!Number.isFinite(s)) s = DEFAULT_PRIOR_MEAN;
+  // Keep strictly inside (0, 1) for a valid Beta mean.
+  s = Math.min(0.99, Math.max(0.01, s));
+  stickyStepTargetMeanEl.value = String(s);
+  return pushStickyOptions({ targetMean: s });
 }
 
 function scheduleStickyOptions() {
@@ -1278,6 +1773,23 @@ stickyStepPriorAlphaEl.addEventListener("change", () => {
 stickyStepPriorBetaEl.addEventListener("change", () => {
   pushStickyOptions({ normalizeInputs: true }).catch((err) => {
     metaEl.textContent = "Sticky options failed: " + err;
+  });
+});
+btnStickyFromMean.addEventListener("click", () => {
+  applyStickyFromMean().catch((err) => {
+    metaEl.textContent = "Prior from s failed: " + err;
+  });
+});
+stickyStepTargetMeanEl.addEventListener("change", () => {
+  applyStickyFromMean().catch((err) => {
+    metaEl.textContent = "Prior from s failed: " + err;
+  });
+});
+stickyStepTargetMeanEl.addEventListener("keydown", (ev) => {
+  if (ev.key !== "Enter") return;
+  ev.preventDefault();
+  applyStickyFromMean().catch((err) => {
+    metaEl.textContent = "Prior from s failed: " + err;
   });
 });
 
@@ -1352,6 +1864,21 @@ function fillMeta(el, payload) {
     el.textContent =
       `delays = [${(m.delays || []).join(", ")}]h · LL = ${m.reward_LL} · ` +
       `horizon = ${m.horizon} · discount_factor = ${m.discount_factor}`;
+  } else if (payload.kind === "sticky_scan") {
+    const nLo = m.filter_strength_min ?? m.strength_min;
+    const nHi = m.filter_strength_max ?? m.strength_max;
+    let priorBit = " · click a row for prior Beta(α, β)";
+    if (m.selected_alpha != null && m.selected_beta != null) {
+      priorBit =
+        ` · selected prior α=${m.selected_alpha} β=${m.selected_beta}` +
+        ` N=${m.selected_n ?? "—"}` +
+        ` mean s=${Number(m.selected_s).toFixed(4)}`;
+    }
+    el.textContent =
+      `scan · steps=${m.n_steps ?? "—"} · points=${m.n_points ?? "—"} · ` +
+      `s ∈ [${Number(m.s_min).toFixed(3)}, ${Number(m.s_max).toFixed(3)}] · ` +
+      `view N=α+β ∈ [${nLo ?? "—"}, ${nHi ?? "—"}]` +
+      priorBit;
   } else if (payload.kind === "sticky_step") {
     const av = m.action_values || {};
     const dayBit = m.day != null ? `Day ${m.day} · ` : "";
@@ -1362,20 +1889,21 @@ function fillMeta(el, payload) {
       m.perceived_s != null ? Number(m.perceived_s).toFixed(3) : "—";
     const priorMean =
       m.prior_mean != null ? Number(m.prior_mean).toFixed(3) : "—";
-    let rollBit = "";
+    const vsPriorBit = m.vs_prior ? ` (${m.vs_prior})` : "";
+    let lastBit = "";
     if (m.last_realized != null) {
-      const stuckLabel =
-        m.last_stuck == null ? "free" : m.last_stuck ? "stick" : "switch";
-      rollBit = ` · last choice=${m.last_realized} (${stuckLabel})`;
+      const stuckBit =
+        m.last_stuck == null ? "" : m.last_stuck ? " (stick)" : " (switch)";
+      lastBit = ` · last=${m.last_realized}${stuckBit}`;
     }
     const doneBit = m.finished ? " · finished" : "";
     el.innerHTML =
       dayBit +
       `${learnBit} · foresight s=${perc} · ŝ=${sHat} · prior mean=${priorMean} · ` +
       `α=${Number(m.alpha).toFixed(1)} β=${Number(m.beta).toFixed(1)} · ` +
-      `<span class="choice">would choose ${m.choice}</span>` +
+      `<span class="choice">would choose ${m.choice}${vsPriorBit}</span>` +
       ` · dessert = ${Number(av.dessert).toFixed(4)} · resist = ${Number(av.resist).toFixed(4)}` +
-      rollBit +
+      lastBit +
       doneBit;
   } else if (m.action_values) {
     const av = m.action_values;
@@ -1423,7 +1951,8 @@ function fillMeta(el, payload) {
   }
   if (m.finished != null) {
     finished = !!m.finished;
-    btnStep.disabled = finished;
+    // Keep disabled while a multi-day click burst is playing out.
+    btnStep.disabled = finished || stepping;
   }
   if (payload.kind === "hyperbolic_ss_ll") {
     btnStepBack.disabled = !(m.elapsed > 0);
@@ -1464,7 +1993,9 @@ function drawInto(divId, payload) {
         ? divId === "chartSails"
           ? "sticky-sails|" + stickinessEl.value
           : "sticky-graph|" + delayMaxEl.value + "|" + delayStepEl.value
-        : demoSelect.value || "");
+        : section === "scan"
+          ? "scan|" + JSON.stringify(currentScanOpts())
+          : demoSelect.value || "");
   const layout = baseLayout(payload, uirevision);
   const opts = plotOpts();
   if (!plotReady[divId]) {
@@ -1519,6 +2050,10 @@ async function refreshStickySailsOnly() {
 
 async function refresh() {
   try {
+    if (section === "scan") {
+      await runScan();
+      return;
+    }
     if (section === "sticky") {
       const draft = parseStickinessDraft(stickinessEl.value);
       const s = draft != null ? draft : clampStickiness(stickinessEl.value);
@@ -1567,6 +2102,43 @@ function scheduleConfig() {
 
 [ssValueEl, ssDelayEl, llValueEl, llDelayEl, lengthEl, horizonEl, discountFactorEl, maxStepsEl].forEach((el) => {
   el.addEventListener("input", scheduleConfig);
+});
+
+[scanNStepsEl, scanSMinEl, scanSMaxEl, scanSStepEl].forEach((el) => {
+  el.addEventListener("change", scheduleScan);
+  el.addEventListener("keydown", (ev) => {
+    if (ev.key === "Enter") {
+      ev.preventDefault();
+      scheduleScan();
+    }
+  });
+});
+scanStrengthMinEl.addEventListener("input", scheduleScanViewFilter);
+scanStrengthMaxEl.addEventListener("input", scheduleScanViewFilter);
+btnScanRun.addEventListener("click", () => {
+  runScan().catch((err) => {
+    metaEl.textContent = "Scan failed: " + err;
+  });
+});
+syncScanStrengthLabel();
+btnScanSummary.addEventListener("click", () => {
+  if (lastScanSummary && lastScanSummary.text) {
+    scanSummaryBody.textContent = lastScanSummary.text;
+  } else {
+    scanSummaryBody.textContent = "Run a scan first.";
+  }
+  if (typeof scanSummaryDialog.showModal === "function") {
+    scanSummaryDialog.showModal();
+  } else {
+    scanSummaryDialog.setAttribute("open", "");
+  }
+});
+btnScanSummaryClose.addEventListener("click", () => {
+  if (typeof scanSummaryDialog.close === "function") {
+    scanSummaryDialog.close();
+  } else {
+    scanSummaryDialog.removeAttribute("open");
+  }
 });
 
 demoSelect.addEventListener("change", () => {
@@ -1667,17 +2239,48 @@ btnResetDefaults.addEventListener("click", async () => {
   }
 });
 
+function clampInt(raw, lo, hi, fallback) {
+  let n = parseInt(raw, 10);
+  if (!Number.isFinite(n)) n = fallback;
+  return Math.max(lo, Math.min(hi, n));
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function stepOnce() {
+  const res = await fetch("/api/steppable/step", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ demo: steppableDemo() }),
+  });
+  if (!res.ok) throw new Error("HTTP " + res.status);
+  const payload = await res.json();
+  draw(payload);
+  return payload;
+}
+
 btnStep.addEventListener("click", async () => {
+  if (stepping || finished) return;
+  const burst = clampInt(stepBurstEl.value, 1, 200, 1);
+  const delayMs = clampInt(stepDelayMsEl.value, 0, 5000, 120);
+  stepBurstEl.value = String(burst);
+  stepDelayMsEl.value = String(delayMs);
+
+  stepping = true;
+  btnStep.disabled = true;
   try {
-    const res = await fetch("/api/steppable/step", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ demo: steppableDemo() }),
-    });
-    if (!res.ok) throw new Error("HTTP " + res.status);
-    draw(await res.json());
+    for (let i = 0; i < burst; i++) {
+      const payload = await stepOnce();
+      if (payload.meta && payload.meta.finished) break;
+      if (i + 1 < burst && delayMs > 0) await sleep(delayMs);
+    }
   } catch (err) {
     metaEl.textContent = "Step failed: " + err;
+  } finally {
+    stepping = false;
+    btnStep.disabled = finished;
   }
 });
 

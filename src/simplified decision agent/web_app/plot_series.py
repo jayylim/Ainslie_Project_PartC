@@ -8,6 +8,7 @@ Sticky solve mirrors sticky_graph.max_ss_resisted (duplicated here so importing
 this module does not run sticky_graph's module-level matplotlib script).
 """
 
+from learning.bayesian_stickiness import BayesianStickinessBelief
 from sticky_decisions import stick_p_t
 
 # ---------------------------------------------------------------------------
@@ -858,10 +859,8 @@ def sticky_step_frame(agent, environment, state, *, day=None, last_info=None):
     Left: SS / LL hyperbolic sails and sticky EV aggregates under perceived s.
     Right: Beta posterior with ŝ (learn On) or fixed prior-mean (learn Off).
 
-    Environment owns beta_belief (updates from the agent's stick/switch choices;
-    intent is always realized).
     learn Off → foresight uses preset perceived_s (= prior mean α₀/(α₀+β₀)).
-    learn On  → foresight tracks posterior mean ŝ from past choices.
+    learn On  → foresight tracks posterior mean ŝ from stick/switch history.
     """
     beta_belief = getattr(environment, "beta_belief", None)
     if beta_belief is None:
@@ -949,36 +948,38 @@ def sticky_step_frame(agent, environment, state, *, day=None, last_info=None):
 
     day_bit = f"Day {day}  |  " if day is not None else ""
 
-    # Previous realized choice (intent always realized; stuck = stick/switch vs prior)
     last_realized = last_info.get("realized") if last_info else None
     last_stuck = last_info.get("stuck") if last_info else None
     last_intent = last_info.get("intent") if last_info else None
-    last_aligned = last_info.get("aligned") if last_info else None
-    if last_aligned is None and last_realized is not None and last_intent is not None:
-        last_aligned = last_realized == last_intent
+
+    # Stick/switch vs previous action (omitted until there is a prior action).
+    if last_realized is None:
+        vs_prior_html = ""
+        vs_prior_label = None
+    else:
+        vs_prior = intent == last_realized
+        vs_prior_label = "stick" if vs_prior else "switch"
+        vs_prior_html = f" · {vs_prior_label}"
+
     if last_realized is None:
         last_action_html = "Last action: —"
         last_action_label = None
+    elif last_stuck is None:
+        last_action_html = f"Last action: <b>{last_realized}</b>"
+        last_action_label = str(last_realized)
     else:
-        if last_stuck is None:
-            choice_kind = "free"
-        elif last_stuck:
-            choice_kind = "stick"
-        else:
-            choice_kind = "switch"
+        choice_kind = "stick" if last_stuck else "switch"
         last_action_html = f"Last action: <b>{last_realized}</b> ({choice_kind})"
         last_action_label = f"{last_realized} ({choice_kind})"
 
     if learn:
         s_line = f"Perceived stickiness={perceived_s:.3f} (learning)"
     else:
-        s_line = (
-            f"Fixed stickiness={prior_mean:.3f}"
-        )
+        s_line = f"Fixed stickiness={prior_mean:.3f}"
     title = {
         "text": (
             f"{day_bit}{s_line}<br>"
-            f"horizon={n}  |  <b>Agent would choose {intent}</b><br>"
+            f"horizon={n}  |  <b>Agent would choose {intent}</b>{vs_prior_html}<br>"
             f"{last_action_html}"
         ),
         "font": {"size": 15, "color": "#1a1d23"},
@@ -996,6 +997,7 @@ def sticky_step_frame(agent, environment, state, *, day=None, last_info=None):
         "day": day,
         "horizon": n,
         "choice": intent,
+        "vs_prior": vs_prior_label,
         "action_values": action_values,
         "ll_ss_gap": action_values["resist"] - action_values["dessert"],
         "perceived_s": perceived_s,
@@ -1014,7 +1016,6 @@ def sticky_step_frame(agent, environment, state, *, day=None, last_info=None):
         meta["last_intent"] = last_intent
         meta["last_realized"] = last_realized
         meta["last_stuck"] = last_stuck
-        meta["last_aligned"] = last_aligned
 
     return {
         "kind": "sticky_step",
@@ -1790,5 +1791,377 @@ def sticky_curves(agent, environment, state, delay_max, delay_step, reward_LL=No
             "horizon": horizon,
             "discount_factor": agent.discount_factor,
             "y_range": [y_lo, y_hi],
+        },
+    }
+
+
+# ---------------------------------------------------------------------------
+# Sticky learning scan (scan_sticky_learning.py) — Plotly twin of matplotlib
+# ---------------------------------------------------------------------------
+
+_SCAN_LABEL_COLORS = {
+    "lock_in_rising_s": "#2ca02c",
+    "lock_in": "#7f7f7f",
+    "switching_loop": "#d62728",
+}
+
+
+def _scan_row_color(row):
+    """One-shot markers use the action switched to; else regime colour."""
+    if row.get("label") == "one_shot_switch":
+        last = row.get("last")
+        if last == "dessert":
+            return COLORS["dessert"]
+        if last == "resist":
+            return COLORS["resist"]
+    return _SCAN_LABEL_COLORS.get(row.get("label"), "#cccccc")
+
+
+def _scan_equal_row_edges(n_rows):
+    """Equal-height band edges for n displayed rows on an index y-axis."""
+    n = max(0, int(n_rows))
+    if n == 0:
+        return []
+    return [i - 0.5 for i in range(n + 1)]
+
+
+def _beta_prior_panel_traces(alpha, beta, *, mean_s=None):
+    """Prior Beta(α, β) density + mean marker for the scan right panel."""
+    belief = BayesianStickinessBelief(alpha=float(alpha), beta=float(beta))
+    xs, dens = belief.pdf_grid(n=251)
+    y_top = max(dens) if dens else 1.0
+    marker_s = float(mean_s) if mean_s is not None else belief.mean()
+    traces = [
+        {
+            "type": "scatter",
+            "mode": "lines",
+            "x": xs,
+            "y": dens,
+            "line": {"color": COLORS["belief"], "width": 2.0},
+            "fill": "tozeroy",
+            "fillcolor": "rgba(44,160,44,0.18)",
+            "name": "prior Beta",
+            "xaxis": "x2",
+            "yaxis": "y2",
+            "hovertemplate": "s=%{x:.3f}<br>density=%{y:.3f}<extra></extra>",
+            "showlegend": False,
+        },
+        {
+            "type": "scatter",
+            "mode": "lines",
+            "x": [marker_s, marker_s],
+            "y": [0.0, y_top * 1.15 if y_top else 1.0],
+            "line": {"color": COLORS["perceived_s"], "width": 1.5},
+            "name": f"mean s={marker_s:.3f}",
+            "xaxis": "x2",
+            "yaxis": "y2",
+            "hoverinfo": "skip",
+            "showlegend": False,
+        },
+    ]
+    return traces, y_top, marker_s
+
+
+def _resolve_selected_row(rows, selected_s=None, selected_index=None):
+    """Pick a scan row by index or prior mean s (exact within float noise)."""
+    if not rows:
+        return None, None
+    if selected_index is not None:
+        try:
+            idx = int(selected_index)
+        except (TypeError, ValueError):
+            idx = None
+        if idx is not None and 0 <= idx < len(rows):
+            return idx, rows[idx]
+    if selected_s is None:
+        return None, None
+    try:
+        target = float(selected_s)
+    except (TypeError, ValueError):
+        return None, None
+    best_i = min(
+        range(len(rows)),
+        key=lambda i: abs(float(rows[i]["s"]) - target),
+    )
+    if abs(float(rows[best_i]["s"]) - target) <= 1e-6:
+        return best_i, rows[best_i]
+    return None, None
+
+
+def scan_frame(
+    rows,
+    *,
+    n_steps,
+    strength_min=None,
+    strength_max=None,
+    selected_s=None,
+    selected_index=None,
+):
+    """
+    Action heatmap (day × prior s) + prior Beta PDF for a clicked row.
+    rows: output of scan_sticky_learning.build_scan.
+
+    strength_min / strength_max filter the view by prior N=α+β only
+    (priors themselves stay lowest integers for each mean).
+    """
+    if strength_min is not None or strength_max is not None:
+        lo = 0 if strength_min is None else int(strength_min)
+        hi = 10**9 if strength_max is None else int(strength_max)
+        if lo > hi:
+            lo, hi = hi, lo
+        rows = [
+            r
+            for r in rows
+            if lo <= int(r.get("n", int(r["alpha"]) + int(r["beta"]))) <= hi
+        ]
+
+    if not rows:
+        return {
+            "kind": "sticky_scan",
+            "traces": [],
+            "layout": {
+                "title": {
+                    "text": "Sticky learning scan (no rows in strength filter)"
+                }
+            },
+            "meta": {"n_steps": n_steps, "n_points": 0, "rows": []},
+        }
+
+    s_vals = [float(r["s"]) for r in rows]
+    n_rows = len(rows)
+    # Index y-axis → equal row heights regardless of gaps in prior mean s.
+    y_idx = list(range(n_rows))
+    z = [[0 if a == "dessert" else 1 for a in r["actions"]] for r in rows]
+    sel_i, sel_row = _resolve_selected_row(
+        rows, selected_s=selected_s, selected_index=selected_index
+    )
+
+    # Per-cell hover: [action, alpha, beta, N, row_index, s]
+    custom = []
+    for i, r in enumerate(rows):
+        a = int(r["alpha"])
+        b = int(r["beta"])
+        n = int(r.get("n", a + b))
+        s_i = float(r["s"])
+        custom.append(
+            [
+                [
+                    "dessert" if v == 0 else "resist",
+                    a,
+                    b,
+                    n,
+                    i,
+                    s_i,
+                ]
+                for v in z[i]
+            ]
+        )
+
+    edges = _scan_equal_row_edges(n_rows)
+    y_lo, y_hi = float(edges[0]), float(edges[-1])
+
+    heatmap = {
+        "type": "heatmap",
+        "x": list(range(1, n_steps + 1)),
+        "y": y_idx,
+        "z": z,
+        "colorscale": [
+            [0.0, COLORS["dessert"]],
+            [1.0, COLORS["resist"]],
+        ],
+        "zmin": 0,
+        "zmax": 1,
+        "showscale": False,
+        "xgap": 0,
+        "ygap": 1,
+        "hovertemplate": (
+            "day=%{x}<br>s=%{customdata[5]:.3f}<br>"
+            "α=%{customdata[1]} · β=%{customdata[2]} · N=%{customdata[3]}<br>"
+            "action=%{customdata[0]}<extra></extra>"
+        ),
+        "customdata": custom,
+        "xaxis": "x",
+        "yaxis": "y",
+        "name": "action",
+    }
+
+    # Horizontal separators at every equal-height prior-s band edge.
+    shapes = [
+        {
+            "type": "line",
+            "xref": "x",
+            "yref": "y",
+            "x0": 0.5,
+            "x1": n_steps + 0.5,
+            "y0": float(y_edge),
+            "y1": float(y_edge),
+            "line": {"color": "rgba(255,255,255,0.92)", "width": 1.25},
+            "layer": "above",
+        }
+        for y_edge in edges
+    ]
+    annotations = [
+        {
+            "text": "red=dessert · blue=resist · click a row for prior Beta",
+            "xref": "paper",
+            "yref": "paper",
+            "x": 0.36,
+            "y": 1.08,
+            "showarrow": False,
+            "font": {"size": 11, "color": "#5c6570"},
+        }
+    ]
+
+    if sel_row is not None:
+        alpha = int(sel_row["alpha"])
+        beta = int(sel_row["beta"])
+        n_prior = int(sel_row.get("n", alpha + beta))
+        mean_s = float(sel_row["s"])
+        prior_traces, y_top, marker_s = _beta_prior_panel_traces(
+            alpha, beta, mean_s=mean_s
+        )
+        belief_title = (
+            f"Prior Beta(α, β)<br>"
+            f"α={alpha} · β={beta} · N={n_prior}<br>"
+            f"mean s={mean_s:.4f}"
+        )
+        shapes.append(
+            {
+                "type": "rect",
+                "xref": "x",
+                "yref": "y",
+                "x0": 0.5,
+                "x1": n_steps + 0.5,
+                "y0": float(edges[sel_i]),
+                "y1": float(edges[sel_i + 1]),
+                "fillcolor": "rgba(0,0,0,0.10)",
+                "line": {
+                    "color": "rgba(26,29,35,0.85)",
+                    "width": 1.5,
+                },
+                "layer": "above",
+            }
+        )
+    else:
+        prior_traces = [
+            {
+                "type": "scatter",
+                "mode": "lines",
+                "x": [],
+                "y": [],
+                "xaxis": "x2",
+                "yaxis": "y2",
+                "showlegend": False,
+                "hoverinfo": "skip",
+            }
+        ]
+        y_top = 1.0
+        marker_s = None
+        belief_title = "Click a heatmap row<br>to show prior Beta(α, β)"
+
+    annotations.append(
+        {
+            "x": 0.90,
+            "y": 1.0,
+            "xref": "paper",
+            "yref": "paper",
+            "text": belief_title,
+            "showarrow": False,
+            "font": {"size": 12, "color": "#1a1d23"},
+            "xanchor": "center",
+            "yanchor": "top",
+            "align": "center",
+            "yshift": -4,
+        }
+    )
+
+    # Label every displayed row by its prior mean; thin out if crowded.
+    tick_step = 1 if n_rows <= 40 else max(1, int(round(n_rows / 30)))
+    tickvals = y_idx[::tick_step]
+    ticktext = [f"{s_vals[i]:.3f}" for i in tickvals]
+
+    row_meta = [
+        {
+            "s": float(r["s"]),
+            "alpha": int(r["alpha"]),
+            "beta": int(r["beta"]),
+            "n": int(r.get("n", int(r["alpha"]) + int(r["beta"]))),
+            "label": r.get("label"),
+            "detail": r.get("detail", ""),
+        }
+        for r in rows
+    ]
+
+    return {
+        "kind": "sticky_scan",
+        "traces": [heatmap] + prior_traces,
+        "layout": {
+            "title": {
+                "text": (
+                    f"Sticky learning scan · steps={n_steps} · "
+                    f"points={len(rows)}"
+                    + (
+                        f" · N∈[{strength_min},{strength_max}]"
+                        if strength_min is not None or strength_max is not None
+                        else ""
+                    )
+                ),
+                "font": {"size": 15, "color": "#1a1d23"},
+            },
+            "xaxis": {
+                "title": "Decision day",
+                "domain": [0.0, 0.66],
+                "range": [0.5, n_steps + 0.5],
+                "anchor": "y",
+            },
+            "yaxis": {
+                "title": "Prior mean s",
+                "domain": [0.0, 0.92],
+                "range": [y_lo, y_hi],
+                "tickvals": tickvals,
+                "ticktext": ticktext,
+                "anchor": "x",
+            },
+            "xaxis2": {
+                "title": "Stickiness s",
+                "domain": [0.74, 1.0],
+                "range": [0.0, 1.0],
+                "anchor": "y2",
+            },
+            "yaxis2": {
+                "title": "Density",
+                "domain": [0.0, 0.92],
+                "range": [0.0, y_top * 1.15 if y_top else 1.0],
+                "anchor": "x2",
+            },
+            "annotations": annotations,
+            "shapes": shapes,
+            "margin": {"l": 70, "r": 30, "t": 78, "b": 55},
+            "height": 560,
+            "showlegend": False,
+        },
+        "meta": {
+            "n_steps": n_steps,
+            "n_points": len(rows),
+            "s_min": s_vals[0],
+            "s_max": s_vals[-1],
+            "strength_min": (
+                min(int(r.get("n", r["alpha"] + r["beta"])) for r in rows)
+            ),
+            "strength_max": (
+                max(int(r.get("n", r["alpha"] + r["beta"])) for r in rows)
+            ),
+            "labels": [r["label"] for r in rows],
+            "rows": row_meta,
+            "selected_index": sel_i,
+            "selected_s": None if sel_row is None else float(sel_row["s"]),
+            "selected_alpha": None if sel_row is None else int(sel_row["alpha"]),
+            "selected_beta": None if sel_row is None else int(sel_row["beta"]),
+            "selected_n": (
+                None
+                if sel_row is None
+                else int(sel_row.get("n", sel_row["alpha"] + sel_row["beta"]))
+            ),
+            "selected_mean": marker_s,
         },
     }
