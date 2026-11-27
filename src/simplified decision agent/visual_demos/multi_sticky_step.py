@@ -167,7 +167,7 @@ def draw_history_grid(ax, decision_ids, history):
 
 
 def draw_frame(ax_by_id, ax_grid, ax_belief, ax_s, agent, environment, state, history, s_history):
-    intents, values = agent.choose_actions(state, environment)
+    intents, values = agent.choose_all_actions(state, environment)
     perceived_s = agent.perceived_stickiness(environment)
     for decision in environment.decision_ids:
         draw_aggregate_panel(
