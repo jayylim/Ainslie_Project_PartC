@@ -154,3 +154,15 @@ class StickyHypAgent:
                 best_action = action
 
         return best_action, action_values
+
+    #for multiple-decision environments; Independent greedy choice for every decision (shared ŝ via beta_belief).
+    def choose_all_actions(self, state, environment):
+        decision_ids = getattr(environment, "decision_ids", None)
+        intents = {}
+        values_by_decision = {}
+        for decision_id in decision_ids:
+            view = environment.decision_view(decision_id)
+            intent, action_values = self.choose_action(state, view)
+            intents[decision_id] = intent
+            values_by_decision[decision_id] = action_values
+        return intents, values_by_decision
